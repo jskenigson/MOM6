@@ -69,6 +69,8 @@ module MOM_diabatic_driver
 use MOM_bulk_mixed_layer,    only : bulkmixedlayer, bulkmixedlayer_init, bulkmixedlayer_CS
 use MOM_checksums,           only : hchksum, uchksum, vchksum
 use MOM_checksum_packages,   only : MOM_state_chksum, MOM_state_stats
+use MOM_counter_grad_restrat, only : counter_grad_restrat, counter_grad_restrat_init
+use MOM_counter_grad_restrat, only : counter_grad_restrat_CS
 use MOM_cpu_clock,           only : cpu_clock_id, cpu_clock_begin, cpu_clock_end
 use MOM_cpu_clock,           only : CLOCK_MODULE_DRIVER, CLOCK_MODULE, CLOCK_ROUTINE
 use MOM_diag_mediator,       only : post_data, register_diag_field, safe_alloc_ptr
@@ -178,6 +180,7 @@ type, public :: diabatic_CS ; private
                              ! transport.
   logical :: salt_reject_below_ML ! It true, add salt below mixed layer (layer mode only)
   logical :: KPPisPassive    ! If true, KPP is in passive mode, not changing answers.
+  logical :: counter_grad_restrat ! It true, apply mixed layer counter gradient re-stratification.
   logical :: useConvection   ! If true, calculate large diffusivities when column
                              ! is statically unstable.
   logical :: matchKPPwithoutKappaShear ! If true, KPP is matched to interior diffusivities
@@ -206,6 +209,7 @@ type, public :: diabatic_CS ; private
   type(int_tide_CS),            pointer :: int_tide_CSp          => NULL()
   type(int_tide_input_CS),      pointer :: int_tide_input_CSp    => NULL()
   type(int_tide_input_type),    pointer :: int_tide_input        => NULL()
+  type(counter_grad_restrat_CS), pointer :: counter_grad_restrat_CSp => NULL()
   type(opacity_CS),             pointer :: opacity_CSp           => NULL()
   type(set_diffusivity_CS),     pointer :: set_diff_CSp          => NULL()
   type(sponge_CS),              pointer :: sponge_CSp            => NULL()
@@ -1005,6 +1009,11 @@ subroutine diabatic(u, v, h, tv, fluxes, visc, ADp, CDp, dt, G, CS)
                                 CS%optics, CS%tracer_flow_CSp)
   endif
   call cpu_clock_end(id_clock_tracers)
+
+
+  if (CS%counter_grad_restrat) then
+    call counter_grad_restrat(tv, h, dt, G, CS%counter_grad_restrat_CSp)
+  endif
 
   if (CS%use_sponge) then
     call cpu_clock_begin(id_clock_sponge)
@@ -1977,6 +1986,7 @@ subroutine diabatic_driver_init(Time, G, param_file, useALEalgorithm, diag, &
   if (CS%id_dvdt_dia > 0) call safe_alloc_ptr(ADp%dv_dt_dia,isd,ied,JsdB,JedB,nz)
   if (CS%id_wd > 0)       call safe_alloc_ptr(CDp%diapyc_vel,isd,ied,jsd,jed,nz+1)
 
+  CS%counter_grad_restrat = counter_grad_restrat_init(Time, G, param_file, diag, CS%counter_grad_restrat_CSp)
   call set_diffusivity_init(Time, G, param_file, diag, CS%set_diff_CSp, diag_to_Z_CSp)
   CS%id_Kd_interface = register_diag_field('ocean_model', 'Kd_interface', diag%axesTi, Time, &
       'Total diapycnal diffusivity at interfaces', 'meter2 second-1')
