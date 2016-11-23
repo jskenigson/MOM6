@@ -266,6 +266,7 @@ character(len=120) function extract_word(string, separators, n, debug)
 
   if (dbg) print *, 'nw,n= ',nw,n,' b,e= ',b,e,' result= ',trim(string(b:e))
   if (b<=ns .and. nw==n-1) extract_word = trim(string(b:ns))
+  if (n<nw+1) extract_word = ''
 end function extract_word
 
 !> Returns string with all spaces removed.
