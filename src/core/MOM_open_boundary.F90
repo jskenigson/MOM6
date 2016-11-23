@@ -50,8 +50,8 @@ integer, parameter         :: MAX_OBC_FIELDS = 100  !< Maximum number of data fi
 type, public :: OBC_segment_data_type
   integer :: fid                                ! handle from FMS associated with segment data on disk
   integer :: fid_dz                             ! handle from FMS associated with segment thicknesses on disk
-  character(len=8)                :: name       ! a name identifier for the segment data 
-  real, dimension(:,:,:), pointer :: buffer_src ! buffer for segment data on the model interpolated to 
+  character(len=8)                :: name       ! a name identifier for the segment data
+  real, dimension(:,:,:), pointer :: buffer_src ! buffer for segment data on the model interpolated to
                                                 ! horizontal grid faces.
   integer                         :: nk_src     ! Number of vertical levels in the source data
   real, dimension(:,:,:), pointer :: dz_src     ! vertical grid cell spacing of the incoming segment data (m)
@@ -259,7 +259,7 @@ subroutine initialize_segment_data(OBC, PF)
 
   call get_param(PF, mod, "INPUTDIR", inputdir, default=".")
   inputdir = slasher(inputdir)
-  
+
   call get_param(PF, mod, "REMAPPING_SCHEME", remappingScheme, &
           "This sets the reconstruction scheme used\n"//&
           "for vertical remapping for all variables.\n"//&
@@ -277,7 +277,7 @@ subroutine initialize_segment_data(OBC, PF)
           "If true, the values on the intermediate grid used for remapping\n"//&
           "are forced to be bounded, which might not be the case due to\n"//&
           "round off.", default=.false.)
-  
+
   allocate(OBC%remap_CS)
   call initialize_remapping(OBC%remap_CS, remappingScheme, boundary_extrapolation = .false., &
        check_reconstruction=check_reconstruction, &
@@ -1530,10 +1530,10 @@ subroutine update_OBC_segment_data(G, GV, OBC, h, Time)
   character(len=40)  :: mod = "set_OBC_segment_data" ! This subroutine's name.
   character(len=200) :: filename, OBC_file, inputdir ! Strings for file/path
   type(OBC_segment_type), pointer :: segment
-  integer, dimension(4) :: siz  
+  integer, dimension(4) :: siz
   integer :: ni_src, nj_src  ! number of src gridpoints along the segments
-  
-                               
+
+
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec
   isd = G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed
   IsdB = G%IsdB ; IedB = G%IedB ; JsdB = G%JsdB ; JedB = G%JedB
