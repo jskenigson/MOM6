@@ -46,16 +46,17 @@ integer, parameter, public :: OBC_DIRECTION_E = 300 !< Indicates the boundary is
 integer, parameter, public :: OBC_DIRECTION_W = 400 !< Indicates the boundary is an effective western boundary
 integer, parameter         :: MAX_OBC_FIELDS = 100  !< Maximum number of data fields needed for OBC segments
 
-
 type, public :: OBC_segment_data_type
   integer :: fid                                ! handle from FMS associated with segment data on disk
   integer :: fid_dz                             ! handle from FMS associated with segment thicknesses on disk
-  character(len=8)                :: name       ! a name identifier for the segment data 
-  real, dimension(:,:,:), pointer :: buffer_src ! buffer for segment data on the model interpolated to 
+  character(len=8)                :: name       ! a name identifier for the segment data
+  real, dimension(:,:,:), pointer :: buffer_src ! buffer for segment data on the model interpolated to
                                                 ! horizontal grid faces.
   integer                         :: nk_src     ! Number of vertical levels in the source data
   real, dimension(:,:,:), pointer :: dz_src     ! vertical grid cell spacing of the incoming segment data (m)
   real, dimension(:,:,:), pointer :: buffer_dst ! buffer src data remapped to the target vertical grid
+  real                            :: value      ! constant value if fid is equal to -1
+  real, dimension(:,:), pointer   :: bt_vel     ! barotropic velocities calculated after remapping if the (U or V)
 end type OBC_segment_data_type
 
 type, public :: OBC_segment_type
@@ -256,10 +257,9 @@ subroutine initialize_segment_data(OBC, PF)
   ! param file so that I can use it later in step_MOM in order to finish
   ! initializing segments on the first step.
 
-
   call get_param(PF, mod, "INPUTDIR", inputdir, default=".")
   inputdir = slasher(inputdir)
-  
+
   call get_param(PF, mod, "REMAPPING_SCHEME", remappingScheme, &
           "This sets the reconstruction scheme used\n"//&
           "for vertical remapping for all variables.\n"//&
@@ -277,12 +277,11 @@ subroutine initialize_segment_data(OBC, PF)
           "If true, the values on the intermediate grid used for remapping\n"//&
           "are forced to be bounded, which might not be the case due to\n"//&
           "round off.", default=.false.)
-  
+
   allocate(OBC%remap_CS)
   call initialize_remapping(OBC%remap_CS, remappingScheme, boundary_extrapolation = .false., &
        check_reconstruction=check_reconstruction, &
        check_remapping=check_remapping, force_bounds_in_subcell=force_bounds_in_subcell)
-
 
   OBC_segments => OBC%OBC_segment_number(1:num_segs)
 
@@ -311,25 +310,29 @@ subroutine initialize_segment_data(OBC, PF)
 
      do m=1,num_fields
         call parse_segment_data_str(segstr,var=trim(fields(m)), value=value, filenam=filename, fieldnam=fieldname)
-
         OBC_segments(n)%field(m)%name = trim(fields(m))
-        filename = trim(inputdir)//trim(filename)
-        fieldname = trim(fieldname)//trim(suffix)
+        if (trim(filename) /= 'none') then
+          filename = trim(inputdir)//trim(filename)
+          fieldname = trim(fieldname)//trim(suffix)
 !        print *,'varnam,filename,fieldname=',trim(fields(m)), ',',trim(filename),',', trim(fieldname)
-        call field_size(filename,fieldname,siz,no_domain=.true.)
-!        print *,'field size= ',siz
-        allocate(OBC_segments(n)%field(m)%buffer_src(siz(1),siz(2),siz(3)))
-        OBC_segments(n)%field(m)%fid = init_external_field(trim(filename),trim(fieldname))
-!        OBC_segments(n)%field(m)%fid = init_external_field(trim(filename),trim(fieldname))
-        if (siz(3) > 1) then
-          fieldname = 'dz_'//trim(fieldname)
           call field_size(filename,fieldname,siz,no_domain=.true.)
-          allocate(OBC_segments(n)%field(m)%dz_src(siz(1),siz(2),siz(3)))
-          OBC_segments(n)%field(m)%nk_src=siz(3)
-          OBC_segments(n)%field(m)%fid_dz = init_external_field(trim(filename),trim(fieldname))
-        else
-          OBC_segments(n)%field(m)%nk_src=1
-        endif
+!        print *,'field size= ',siz
+          allocate(OBC_segments(n)%field(m)%buffer_src(siz(1),siz(2),siz(3)))
+          OBC_segments(n)%field(m)%fid = init_external_field(trim(filename),trim(fieldname))
+!        OBC_segments(n)%field(m)%fid = init_external_field(trim(filename),trim(fieldname))
+          if (siz(3) > 1) then
+            fieldname = 'dz_'//trim(fieldname)
+            call field_size(filename,fieldname,siz,no_domain=.true.)
+            allocate(OBC_segments(n)%field(m)%dz_src(siz(1),siz(2),siz(3)))
+            OBC_segments(n)%field(m)%nk_src=siz(3)
+            OBC_segments(n)%field(m)%fid_dz = init_external_field(trim(filename),trim(fieldname))
+          else
+            OBC_segments(n)%field(m)%nk_src=1
+          endif
+       else
+          OBC_segments(n)%field(m)%fid = -1
+          OBC_segments(n)%field(m)%value = value
+       endif
      enddo
 
   enddo
@@ -721,7 +724,8 @@ end subroutine parse_segment_str
            fieldnam = 'none'
            word1 = extract_word(word3,':',2)
            lword=len_trim(word1)
-           read(word2(1:lword),*) value
+!           print *,'word1= ',trim(word1)
+           read(word1(1:lword),*) value
         endif
       endif
     endif
@@ -1530,53 +1534,72 @@ subroutine update_OBC_segment_data(G, GV, OBC, h, Time)
   character(len=40)  :: mod = "set_OBC_segment_data" ! This subroutine's name.
   character(len=200) :: filename, OBC_file, inputdir ! Strings for file/path
   type(OBC_segment_type), pointer :: segment
-  integer, dimension(4) :: siz  
+  integer, dimension(4) :: siz
+  real :: sumh ! column sum of thicknesses (m)
   integer :: ni_src, nj_src  ! number of src gridpoints along the segments
-  
-                               
+
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec
   isd = G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed
   IsdB = G%IsdB ; IedB = G%IedB ; JsdB = G%JsdB ; JedB = G%JedB
 
-   do n = 1, OBC%number_of_segments
-      segment => OBC%OBC_segment_number(n)
-      do m = 1,segment%num_fields
-           ! move this to segment initialization
-           if (.not.associated(segment%field(m)%buffer_dst)) then
-              siz(1)=size(segment%field(m)%buffer_src,1)
-              siz(2)=size(segment%field(m)%buffer_src,2)
-              if (segment%field(m)%nk_src == 1) then
-                 allocate(segment%field(m)%buffer_dst(siz(1),siz(2),GV%ke))
-              else
-                 allocate(segment%field(m)%buffer_dst(siz(1),siz(2),1))
-              endif
-              segment%field(m)%buffer_dst(:,:,:)=0.0
-           endif
-           ! read source data interpolated to the current model time
-           call time_interp_external(segment%field(m)%fid,Time, segment%field(m)%buffer_src)
+  do n = 1, OBC%number_of_segments
+    segment => OBC%OBC_segment_number(n)
+    do m = 1,segment%num_fields
+      if (segment%field(m)%fid > 0) then
+        if (.not.associated(segment%field(m)%buffer_dst)) then
+           siz(1)=size(segment%field(m)%buffer_src,1)
+           siz(2)=size(segment%field(m)%buffer_src,2)
+          if (segment%field(m)%nk_src == 1) then
+             allocate(segment%field(m)%buffer_dst(siz(1),siz(2),GV%ke))
+          else
+             allocate(segment%field(m)%buffer_dst(siz(1),siz(2),1))
+          endif
+          segment%field(m)%buffer_dst(:,:,:)=0.0
 
-           nj_src=size(segment%field(m)%buffer_dst,2)
-           ni_src=size(segment%field(m)%buffer_dst,1)
-
-           if (segment%field(m)%nk_src > 1) then
-             call time_interp_external(segment%field(m)%fid_dz,Time, segment%field(m)%dz_src)
-             do j=1,nj_src
-                do i=1,ni_src
-                  ! Using the h remapping approach
-                  ! Pretty sure we need to check for source/target grid consistency here
-                  segment%field(m)%buffer_dst(i,j,:)=0.0  ! initialize remap destination buffer
-                  if (G%mask2dT(i,j)>0.) then
-                     call remapping_core_h(segment%field(m)%nk_src,segment%field(m)%dz_src(i,j,:),&
-                           segment%field(m)%buffer_src(i,j,:),GV%ke, h(i,j,:),&
-                           segment%field(m)%buffer_dst(i,j,:),OBC%remap_CS)
-                  endif
-                enddo
+          if (trim(segment%field(m)%name) == 'U' .or. trim(segment%field(m)%name) == 'V') then
+             allocate(segment%field(m)%bt_vel(siz(1),siz(2)))
+             segment%field(m)%bt_vel(:,:)=0.0
+          endif
+        endif
+        ! read source data interpolated to the current model time
+        call time_interp_external(segment%field(m)%fid,Time, segment%field(m)%buffer_src)
+        nj_src=size(segment%field(m)%buffer_dst,2)
+        ni_src=size(segment%field(m)%buffer_dst,1)
+        if (segment%field(m)%nk_src > 1) then
+          call time_interp_external(segment%field(m)%fid_dz,Time, segment%field(m)%dz_src)
+          do j=1,nj_src
+             do i=1,ni_src
+                ! Using the h remapping approach
+                ! Pretty sure we need to check for source/target grid consistency here
+                segment%field(m)%buffer_dst(i,j,:)=0.0  ! initialize remap destination buffer
+                if (G%mask2dT(i,j)>0.) then
+                   call remapping_core_h(segment%field(m)%nk_src,segment%field(m)%dz_src(i,j,:),&
+                        segment%field(m)%buffer_src(i,j,:),GV%ke, h(i,j,:),&
+                        segment%field(m)%buffer_dst(i,j,:),OBC%remap_CS)
+                endif
              enddo
-           else  ! 2d data
-             segment%field(m)%buffer_dst(:,:,1)=segment%field(m)%buffer_src(:,:,1)  ! initialize remap destination buffer
-           endif
-      enddo ! end field loop
-    enddo
+          enddo
+        else  ! 2d data
+          segment%field(m)%buffer_dst(:,:,1)=segment%field(m)%buffer_src(:,:,1)  ! initialize remap destination buffer
+        endif
+      endif
+
+      if (trim(segment%field(m)%name) == 'U' .or. trim(segment%field(m)%name) == 'V') then
+         do j=1,nj_src
+            do i=1,ni_src
+               segment%field(m)%bt_vel(i,j) = 0.0
+               sumh=0.0
+               do k=1,GV%ke
+                  segment%field(m)%bt_vel(i,j) = segment%field(m)%bt_vel(i,j)+ &
+                       segment%field(m)%buffer_dst(i,j,k)*h(i,j,k)
+                  sumh=sumh+h(i,j,k)
+               enddo
+               segment%field(m)%bt_vel(i,j) = segment%field(m)%bt_vel(i,j)/max(sumh,GV%Angstrom)
+            enddo
+         enddo
+      endif
+   enddo ! end field loop
+ enddo
 
 end subroutine update_OBC_segment_data
 
