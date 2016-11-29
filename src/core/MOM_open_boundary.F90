@@ -292,9 +292,11 @@ subroutine initialize_segment_data(OBC, PF)
 !     print *,'n, segstr=',n, trim(segstr)
      call parse_segment_data_str(trim(segstr),fields=fields, num_fields=num_fields)
 
+     if (num_fields == 0) cycle ! cycle to next segment
      allocate(OBC_segments(n)%field(num_fields))
 
      if (OBC_segments(n)%Flather) then
+        OBC%update_OBC = .true.
         if (num_fields /= 3) call MOM_error(FATAL, &
                    "MOM_open_boundary, initialize_segment_data: "//&
                    "Need three inputs for Flather")
@@ -367,7 +369,7 @@ subroutine setup_u_point_obc(OBC, G, segment_str, l_seg)
 
   if (Je_obc>Js_obc) OBC%OBC_segment_number(l_seg)%direction = OBC_DIRECTION_E
   if (Je_obc<Js_obc) OBC%OBC_segment_number(l_seg)%direction = OBC_DIRECTION_W
-  do a_loop = 1,5
+  do a_loop = 1,5 ! up to 5 options available
     if (len_trim(action_str(a_loop)) == 0) then
       cycle
     elseif (trim(action_str(a_loop)) == 'FLATHER') then
@@ -767,12 +769,12 @@ subroutine open_boundary_init(G, param_file, OBC)
 
 end subroutine open_boundary_init
 
-logical function open_boundary_query(OBC, apply_specified_OBC, apply_Flather_OBC, apply_nudged_OBC, use_OBC_segments)
+logical function open_boundary_query(OBC, apply_specified_OBC, apply_Flather_OBC, apply_nudged_OBC, needs_ext_seg_data)
   type(ocean_OBC_type), pointer     :: OBC !< Open boundary control structure
   logical, optional,    intent(in)  :: apply_specified_OBC !< If present, returns True if specified_*_BCs_exist_globally is true
   logical, optional,    intent(in)  :: apply_Flather_OBC   !< If present, returns True if Flather_*_BCs_exist_globally is true
   logical, optional,    intent(in)  :: apply_nudged_OBC    !< If present, returns True if nudged_*_BCs_exist_globally is true
-  logical, optional,    intent(in)  :: use_OBC_segments !< If present, returns True if using the newer obc segments
+  logical, optional,    intent(in)  :: needs_ext_seg_data      !< If present, returns True if external segment data needed
   open_boundary_query = .false.
   if (.not. associated(OBC)) return
   if (present(apply_specified_OBC)) open_boundary_query = OBC%specified_u_BCs_exist_globally .or. &
@@ -781,7 +783,8 @@ logical function open_boundary_query(OBC, apply_specified_OBC, apply_Flather_OBC
                                                         OBC%Flather_v_BCs_exist_globally
   if (present(apply_nudged_OBC)) open_boundary_query = OBC%nudged_u_BCs_exist_globally .or. &
                                                        OBC%nudged_v_BCs_exist_globally
-  if (present(use_OBC_segments) .and. OBC%number_of_segments > 0) open_boundary_query = .true.
+  if (present(needs_ext_seg_data) .and. OBC%number_of_segments > 0 .and. &
+      OBC%update_OBC) open_boundary_query = OBC%update_OBC
 
 end function open_boundary_query
 
@@ -1520,10 +1523,9 @@ subroutine set_Flather_data(OBC, tv, h, G, PF, tracer_Reg)
 
 end subroutine set_Flather_data
 
-subroutine update_OBC_segment_data(G, GV, OBC, h, Time)
+subroutine update_OBC_segment_data(G, OBC, h, Time)
 
-  type(ocean_grid_type),                     intent(inout) :: G !< Ocean grid structure
-  type(verticalGrid_type),                   intent(in)    :: GV
+  type(ocean_grid_type),                     intent(in)    :: G !< Ocean grid structure
   type(ocean_OBC_type),                      pointer       :: OBC !< Open boundary structure
   real, dimension(SZI_(G),SZJ_(G), SZK_(G)), intent(inout) :: h !< Thickness
   type(time_type),                           intent(in)    :: Time
@@ -1550,7 +1552,7 @@ subroutine update_OBC_segment_data(G, GV, OBC, h, Time)
            siz(1)=size(segment%field(m)%buffer_src,1)
            siz(2)=size(segment%field(m)%buffer_src,2)
           if (segment%field(m)%nk_src == 1) then
-             allocate(segment%field(m)%buffer_dst(siz(1),siz(2),GV%ke))
+             allocate(segment%field(m)%buffer_dst(siz(1),siz(2),G%ke))
           else
              allocate(segment%field(m)%buffer_dst(siz(1),siz(2),1))
           endif
@@ -1574,7 +1576,7 @@ subroutine update_OBC_segment_data(G, GV, OBC, h, Time)
                 segment%field(m)%buffer_dst(i,j,:)=0.0  ! initialize remap destination buffer
                 if (G%mask2dT(i,j)>0.) then
                    call remapping_core_h(segment%field(m)%nk_src,segment%field(m)%dz_src(i,j,:),&
-                        segment%field(m)%buffer_src(i,j,:),GV%ke, h(i,j,:),&
+                        segment%field(m)%buffer_src(i,j,:),G%ke, h(i,j,:),&
                         segment%field(m)%buffer_dst(i,j,:),OBC%remap_CS)
                 endif
              enddo
@@ -1582,21 +1584,32 @@ subroutine update_OBC_segment_data(G, GV, OBC, h, Time)
         else  ! 2d data
           segment%field(m)%buffer_dst(:,:,1)=segment%field(m)%buffer_src(:,:,1)  ! initialize remap destination buffer
         endif
+      else ! fid <= 0
+         if (.not. ASSOCIATED(segment%field(m)%buffer_dst)) then
+           allocate(segment%field(m)%buffer_dst(is:ie,js:je,G%ke))
+           segment%field(m)%buffer_dst(:,:,:)=segment%field(m)%value
+           if (trim(segment%field(m)%name) == 'U' .or. trim(segment%field(m)%name) == 'V') then
+              allocate(segment%field(m)%bt_vel(is:ie,js:je))
+              segment%field(m)%bt_vel(:,:)=segment%field(m)%value
+           endif
+         endif 
       endif
 
       if (trim(segment%field(m)%name) == 'U' .or. trim(segment%field(m)%name) == 'V') then
-         do j=1,nj_src
-            do i=1,ni_src
-               segment%field(m)%bt_vel(i,j) = 0.0
-               sumh=0.0
-               do k=1,GV%ke
-                  segment%field(m)%bt_vel(i,j) = segment%field(m)%bt_vel(i,j)+ &
-                       segment%field(m)%buffer_dst(i,j,k)*h(i,j,k)
-                  sumh=sumh+h(i,j,k)
-               enddo
-               segment%field(m)%bt_vel(i,j) = segment%field(m)%bt_vel(i,j)/max(sumh,GV%Angstrom)
-            enddo
-         enddo
+         if (segment%field(m)%fid>0) then
+           do j=1,nj_src
+              do i=1,ni_src
+                 segment%field(m)%bt_vel(i,j) = 0.0
+                 sumh=0.0
+                 do k=1,G%ke
+                    segment%field(m)%bt_vel(i,j) = segment%field(m)%bt_vel(i,j)+ &
+                         segment%field(m)%buffer_dst(i,j,k)*h(i,j,k)
+                    sumh=sumh+h(i,j,k)
+                 enddo
+                 segment%field(m)%bt_vel(i,j) = segment%field(m)%bt_vel(i,j)/max(sumh,1.e-12)
+              enddo
+           enddo
+         endif
       endif
    enddo ! end field loop
  enddo
