@@ -14,7 +14,7 @@ use MOM_grid, only : ocean_grid_type
 use MOM_dyn_horgrid, only : dyn_horgrid_type
 use MOM_io, only : EAST_FACE, NORTH_FACE
 use MOM_io, only : slasher, read_data
-use MOM_open_boundary, only : ocean_obc_type
+use MOM_open_boundary, only : ocean_obc_type, update_OBC_segment_data, open_boundary_query
 use MOM_tracer_registry, only : add_tracer_OBC_values, tracer_registry_type
 use MOM_variables, only : thermo_var_ptrs
 use tidal_bay_initialization, only : tidal_bay_set_OBC_data
@@ -64,7 +64,11 @@ subroutine update_OBC_data(OBC, G, h, Time)
 
   if (OBC%OBC_values_config == "tidal_bay") then
     call tidal_bay_set_OBC_data(OBC, G, h, Time)
+   ! update OBC external data at the beginning of the timestamp (better T+dt/2?)
+  else if (open_boundary_query(OBC,needs_ext_seg_data=.true.)) then
+    call update_OBC_segment_data(G,OBC,h,Time)
   endif
+
 
 end subroutine update_OBC_data
 

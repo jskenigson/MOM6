@@ -780,7 +780,6 @@ subroutine read_param_logical(CS, varname, value, fail_if_missing)
   endif ; endif
 end subroutine read_param_logical
 
-
 subroutine read_param_time(CS, varname, value, timeunit, fail_if_missing)
   type(param_file_type),  intent(in) :: CS
   character(len=*),       intent(in) :: varname
@@ -1443,7 +1442,6 @@ subroutine log_param_time(CS, modulename, varname, value, desc, units, &
   endif
 
 end subroutine log_param_time
-
 
 subroutine get_param_int(CS, modulename, varname, value, desc, units, &
                default, fail_if_missing, do_not_read, do_not_log, &
