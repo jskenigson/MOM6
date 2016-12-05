@@ -444,13 +444,13 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, PF, dirs, &
   call open_boundary_init(G, PF, OBC)
 
   ! This is the legacy approach to turning on open boundaries
-  call get_param(PF, mod, "OBC_CONFIG", config, default="none", do_not_log=.true.)
+  call get_param(PF, mod, "OBC_CONFIG", config, default="None", do_not_log=.true.)
   if (open_boundary_query(OBC, apply_specified_OBC=.true.)) then
     if (trim(config) == "DOME") then
       call DOME_set_OBC_data(OBC, tv, G, GV, PF, tracer_Reg)
     elseif (trim(config) == "USER") then
       call user_set_OBC_data(OBC, tv, G, PF, tracer_Reg)
-    elseif (.not. trim(config) == "none") then
+    elseif (.not. trim(config) == "None") then
       call MOM_error(FATAL, "The open boundary conditions specified by "//&
               "OBC_CONFIG = "//trim(config)//" have not been fully implemented.")
     endif
@@ -460,7 +460,7 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, PF, dirs, &
   endif
 
   ! Still need a way to specify the boundary values
-  call get_param(PF, mod, "OBC_VALUES_CONFIG", config, default="none", do_not_log=.true.)
+  call get_param(PF, mod, "OBC_VALUES_CONFIG", config, default="None", do_not_log=.true.)
   if (trim(config) == "tidal_bay") then
     OBC%update_OBC = .true.
     OBC%OBC_values_config = "tidal_bay"

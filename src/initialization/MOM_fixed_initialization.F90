@@ -86,9 +86,9 @@ subroutine MOM_initialize_fixed(G, OBC, PF, write_geom, output_dir)
   if (open_boundary_query(OBC, apply_specified_OBC=.true.)) then
     call get_param(PF, mod, "OBC_CONFIG", config, &
                  "A string that sets how the open boundary conditions are \n"//&
-                 " configured: \n", default="none")
+                 " configured: \n", default="None")
     select case ( trim(config) )
-      case ("none")
+      case ("None")
       case ("DOME") ! Avoid FATAL when using segments
       case ("tidal_bay") ; !Using segments now
       case ("supercritical") ; !Using segments now
