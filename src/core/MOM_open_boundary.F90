@@ -187,10 +187,10 @@ subroutine open_boundary_config(G, param_file, OBC)
                  units="m s-2", default = 9.80)
   call get_param(param_file, mod, "OBC_CONFIG", config1, &
                  "A string that sets how the open boundary conditions are \n"//&
-                 " configured: \n", default="None")
+                 " configured: \n", default="None", do_not_log=.true.)
   call get_param(param_file, mod, "OBC_VALUES_CONFIG", config2, &
                  "A string that sets how the open boundary values are \n"//&
-                 " configured: \n", default="None")
+                 " configured: \n", default="None", do_not_log=.true.)
   if (config1 .ne. "None" .or. config2 .ne. "None") OBC%user_BCs_set_globally = .true.
 
   if (OBC%number_of_segments > 0) then
