@@ -105,7 +105,7 @@ use MOM_forcing_type, only : forcing
 use MOM_grid, only : ocean_grid_type
 use MOM_hor_index, only : hor_index_type
 use MOM_io, only : vardesc, var_desc
-use MOM_open_boundary, only : ocean_OBC_type, OBC_SIMPLE, OBC_NONE
+use MOM_open_boundary, only : ocean_OBC_type, OBC_segment_type, OBC_SIMPLE, OBC_NONE
 use MOM_open_boundary, only : OBC_DIRECTION_E, OBC_DIRECTION_W
 use MOM_open_boundary, only : OBC_DIRECTION_N, OBC_DIRECTION_S
 use MOM_restart, only : register_restart_field, query_initialized, MOM_restart_CS
@@ -318,7 +318,7 @@ type, public :: barotropic_CS ; private
   type(group_pass_type) :: pass_tmp_uv, pass_eta_bt_rem
   type(group_pass_type) :: pass_force_hbt0_Cor_ref, pass_Dat_uv
   type(group_pass_type) :: pass_eta_ubt, pass_etaav
-  type(group_pass_type) :: pass_ubta_uhbta, pass_e_anom
+  type(group_pass_type) :: pass_ubta_uhbta, pass_e_anom, pass_OBC
 
   integer :: id_PFu_bt = -1, id_PFv_bt = -1, id_Coru_bt = -1, id_Corv_bt = -1
   integer :: id_ubtforce = -1, id_vbtforce = -1, id_uaccel = -1, id_vaccel = -1
@@ -355,7 +355,6 @@ end type local_BT_cont_v_type
 type, private :: memory_size_type
   integer :: isdw, iedw, jsdw, jedw ! The memory limits of the wide halo arrays.
 end type memory_size_type
-
 
 type, private :: BT_OBC_type
   real, dimension(:,:), pointer :: &
@@ -990,8 +989,24 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, &
 
   ! Set up fields related to the open boundary conditions.
   if (apply_OBCs) then
-    call set_up_BT_OBC(OBC, eta, BT_OBC, G, GV, MS, ievf-ie, use_BT_cont, &
+    if (OBC%number_of_segments > 0) then
+       call initialize_BT_OBC(G,GV,MS,OBC,eta,BT_OBC, use_BT_cont, Datu, Datv, BTCL_u, BTCL_v)
+       call create_group_pass(CS%pass_OBC, BT_OBC%ubt_outer, BT_OBC%vbt_outer, CS%BT_Domain, &
+            To_All+Scalar_Pair)
+       call create_group_pass(CS%pass_OBC, BT_OBC%uhbt, BT_OBC%vhbt, CS%BT_Domain, &
+            To_All+Scalar_Pair)
+       call create_group_pass(CS%pass_OBC, BT_OBC%eta_outer_u, BT_OBC%eta_outer_v, CS%BT_Domain,&
+            To_All+Scalar_Pair)
+       call create_group_pass(CS%pass_OBC, BT_OBC%H_u, CS%BT_Domain)
+       if (nonblock_setup) then
+         call start_group_pass(CS%pass_OBC, CS%BT_Domain)
+       else
+         call do_group_pass(CS%pass_OBC, CS%BT_Domain)
+       endif
+    else
+      call set_up_BT_OBC(OBC, eta, BT_OBC, G, GV, MS, ievf-ie, use_BT_cont, &
                                      Datu, Datv, BTCL_u, BTCL_v)
+    endif
   endif
 
 !   Here the vertical average accelerations due to the Coriolis, advective,
@@ -1549,7 +1564,6 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, &
 !    wt_trans(n) = wt_trans(n) * I_sum_wt_trans
   enddo
 
-
   sum_wt_vel = 0.0 ; sum_wt_eta = 0.0 ; sum_wt_accel = 0.0 ; sum_wt_trans = 0.0
 
   ! The following loop contains all of the time steps.
@@ -1646,7 +1660,7 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, &
 
     if (find_etaav) then
 !GOMP do
-      do j=js,je ; do i=is,ie
+      do j=js-1,je+1 ; do i=is-1,ie+1
         eta_sum(i,j) = eta_sum(i,j) + wt_accel2(n) * eta_PF_BT(i,j)
       enddo ; enddo
     endif
@@ -1698,6 +1712,8 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, &
         enddo ; enddo
       endif
     endif
+
+    if (nonblock_setup .and. OBC%number_of_segments > 0) call complete_group_pass(CS%pass_OBC, CS%BT_Domain)
 
 !GOMP parallel default(none) shared(isv,iev,jsv,jev,G,amer,ubt,cmer,bmer,dmer,eta_PF_BT, &
 !GOMP                               eta_PF,gtot_N,gtot_S,dgeo_de,CS,p_surf_dyn,n,        &
@@ -1962,6 +1978,7 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, &
           vhbt_sum(i,J) = vhbt_sum(i,J) + wt_trans(n) * vhbt(i,J)
           vbt_wtd(i,J) = vbt_wtd(i,J) + wt_vel(n) * vbt(i,J)
         endif
+!        print *,'vbt_sum at southern boundary (i=5,j=4)= ',vbt_sum(5,4)
       enddo ; enddo ; endif
     endif
 
@@ -1979,6 +1996,8 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, &
     enddo ; enddo
     if (apply_OBCs) call apply_eta_OBCs(OBC, eta, ubt_old, vbt_old, BT_OBC, &
                                         G, MS, iev-ie, dtbt)
+
+!    print *,'eta at southern boundary (i=5,j=4) = ',eta(5,4)
 
     if (do_hifreq_output) then
       time_step_end = time_bt_start + set_time(int(floor(n*dtbt+0.5)))
@@ -2008,7 +2027,7 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, &
   I_sum_wt_vel = 1.0 / sum_wt_vel ; I_sum_wt_eta = 1.0 / sum_wt_eta
   I_sum_wt_accel = 1.0 / sum_wt_accel ; I_sum_wt_trans = 1.0 / sum_wt_trans
 
-  if (find_etaav) then ; do j=js,je ; do i=is,ie
+  if (find_etaav) then ; do j=js-1,je+1 ; do i=is-1,ie+1
     etaav(i,j) = eta_sum(i,j) * I_sum_wt_accel
   enddo ; enddo ; endif
   do j=js-1,je+1 ; do i=is-1,ie+1 ; e_anom(i,j) = 0.0 ; enddo ; enddo
@@ -2610,6 +2629,8 @@ subroutine apply_velocity_OBCs(OBC, ubt, vbt, uhbt, vhbt, ubt_trans, vbt_trans, 
     endif ; enddo ; enddo
   endif
 
+!  print *,'VBT_TRANS at southern segment (i=5,j=4)= ',vbt_trans(5,4)
+
 end subroutine apply_velocity_OBCs
 
 subroutine apply_eta_OBCs(OBC, eta, ubt, vbt, BT_OBC, G, MS, halo, dtbt)
@@ -2846,6 +2867,210 @@ subroutine set_up_BT_OBC(OBC, eta, BT_OBC, G, GV, MS, halo, use_BT_cont, Datu, D
 
 end subroutine set_up_BT_OBC
 
+subroutine initialize_BT_OBC(G,GV,MS,OBC, eta, BT_OBC, use_BT_cont, Datu, Datv, BTCL_u, BTCL_v)
+  type(ocean_grid_type),                 intent(inout) :: G
+  type(verticalGrid_type),               intent(in)    :: GV
+  type(memory_size_type),                intent(in)    :: MS
+  type(ocean_OBC_type),                  pointer       :: OBC
+  real, dimension(SZIW_(MS),SZJW_(MS)),  intent(in)    :: eta
+  type(BT_OBC_type),                     intent(inout) :: BT_OBC
+  logical,                               intent(in)    :: use_BT_cont
+  real, dimension(SZIBW_(MS),SZJW_(MS)), intent(in)    :: Datu
+  real, dimension(SZIW_(MS),SZJBW_(MS)), intent(in)    :: Datv
+  type(local_BT_cont_u_type), dimension(SZIBW_(MS),SZJW_(MS)), intent(in) :: BTCL_u
+  type(local_BT_cont_v_type), dimension(SZIW_(MS),SZJBW_(MS)), intent(in) :: BTCL_v
+  type(OBC_segment_type), pointer :: segment
+
+! Allocate and initialize storage arrays for boundary segment data using
+! arrays with arbitrary halo widths.   This should be called prior to calling
+! btstep.
+
+! Arguments: OBC - an associated pointer to an OBC type.
+!  (in)      eta - The barotropic free surface height anomaly or
+!                  column mass anomaly, in m or kg m-2.
+!  (in)      BT_OBC - A structure with the private barotropic arrays related
+!                     to the open boundary conditions, set by set_up_BT_OBC.
+!  (in)      G - The ocean's grid structure.
+!  (in)      GV - The ocean's vertical grid structure.
+!  (in)      MS - A type that describes the memory sizes of the argument arrays.
+!  (in)      halo - The extra halo size to use here.
+!  (in)      dtbt - The time step, in s.
+!  (in)      use_BT_cont - If true, use the BT_cont_types to calculate transports.
+!  (in)      Datu - A fixed estimate of the face areas at u points.
+!  (in)      Datv - A fixed estimate of the face areas at u points.
+!  (in)      BCTL_u - Structures of information used for a dynamic estimate
+!  (in)      BCTL_v - of the face areas at u- and v- points.
+
+  integer :: i, j, k, is, ie, js, je, nz, Isq, Ieq, Jsq, Jeq
+  integer :: isd, ied, jsd, jed, IsdB, IedB, JsdB, JedB
+  integer :: isdw, iedw, jsdw, jedw, n, i2, j2
+  logical :: OBC_used
+  is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec
+  isd = G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed ; nz = G%ke
+  IsdB = G%IsdB ; IedB = G%IedB ; JsdB = G%JsdB ; JedB = G%JedB
+  isdw = MS%isdw ; iedw = MS%iedw ; jsdw = MS%jsdw ; jedw = MS%jedw
+
+!  if ((isdw < isd) .or. (jsdw < jsd)) then
+!    call MOM_error(FATAL, "set_up_BT_OBC: Open boundary conditions are not "//&
+!                           "yet fully implemented with wide barotropic halos.")
+!  endif
+
+  if (.not. ASSOCIATED(BT_OBC%Cg_u)) then
+    allocate(BT_OBC%Cg_u(isdw-1:iedw,jsdw:jedw))        ; BT_OBC%Cg_u(:,:) = 0.0
+    allocate(BT_OBC%H_u(isdw-1:iedw,jsdw:jedw))         ; BT_OBC%H_u(:,:) = 0.0
+    allocate(BT_OBC%uhbt(isdw-1:iedw,jsdw:jedw))        ; BT_OBC%uhbt(:,:) = 0.0
+    allocate(BT_OBC%ubt_outer(isdw-1:iedw,jsdw:jedw))   ; BT_OBC%ubt_outer(:,:) = 0.0
+    allocate(BT_OBC%eta_outer_u(isdw-1:iedw,jsdw:jedw)) ; BT_OBC%eta_outer_u(:,:) = 0.0
+
+    allocate(BT_OBC%Cg_v(isdw:iedw,jsdw-1:jedw))        ; BT_OBC%Cg_v(:,:) = 0.0
+    allocate(BT_OBC%H_v(isdw:iedw,jsdw-1:jedw))         ; BT_OBC%H_v(:,:) = 0.0
+    allocate(BT_OBC%vhbt(isdw:iedw,jsdw-1:jedw))        ; BT_OBC%vhbt(:,:) = 0.0
+    allocate(BT_OBC%vbt_outer(isdw:iedw,jsdw-1:jedw))   ; BT_OBC%vbt_outer(:,:) = 0.0
+    allocate(BT_OBC%eta_outer_v(isdw:iedw,jsdw-1:jedw)) ; BT_OBC%eta_outer_v(:,:)=0.0
+  endif
+
+  do n=1,OBC%number_of_segments
+    segment=>OBC%OBC_segment_number(n)
+
+    if (.not.  segment%on_pe) cycle
+
+    do j=segment%js_obc,segment%je_obc
+      do i=segment%is_obc,segment%ie_obc
+        i2 = i-segment%Is_obc + 1
+        j2 = j-segment%Js_obc + 1
+        if (segment%direction == OBC_DIRECTION_E .and. OBC%OBC_segment_u(i,j) == n) then
+          if (OBC%OBC_segment_number(OBC%OBC_segment_u(I,j))%specified) then
+            BT_OBC%uhbt(i,j) = segment%unhbt(i2,j2)
+            if (use_BT_cont) then
+              BT_OBC%ubt_outer(i,j) = uhbt_to_ubt(BT_OBC%uhbt(i,j),BTCL_u(i,j))
+            else
+              if (Datu(i,j) > 0.0) BT_OBC%ubt_outer(i,j) = BT_OBC%uhbt(i,j) / Datu(i,j)
+            endif
+          else
+            BT_OBC%Cg_u(i,j) = segment%Cg(i2,j2)
+            BT_OBC%H_u(i,j) = segment%htot(i2,j2)
+            BT_OBC%eta_outer_u(i,j) = segment%eta(i2,j2)
+            BT_OBC%ubt_outer(i,j) = segment%unbt(i2,j2)
+          endif
+        else if (segment%direction == OBC_DIRECTION_W .and. OBC%OBC_segment_u(i-1,j) == n) then
+          if (OBC%OBC_segment_number(OBC%OBC_segment_u(I-1,j))%specified) then
+            BT_OBC%uhbt(i-1,j) = segment%unhbt(i2,j2)  !! NOTE: segment arrays are not staggered
+                                                       !! They are defined at the outer boundary
+            if (use_BT_cont) then
+               BT_OBC%ubt_outer(i-1,j) = uhbt_to_ubt(BT_OBC%uhbt(i-1,j),BTCL_u(i-1,j))
+            else
+              if (Datu(i-1,j) > 0.0) BT_OBC%ubt_outer(i-1,j) = BT_OBC%uhbt(i-1,j) / Datu(i-1,j)
+            endif
+          else
+            BT_OBC%Cg_u(i-1,j) = segment%Cg(i2,j2)
+            BT_OBC%H_u(i-1,j) = segment%htot(i2,j2)
+            BT_OBC%eta_outer_u(i-1,j) = segment%eta(i2,j2)
+            BT_OBC%ubt_outer(i-1,j) = segment%unbt(i2,j2)
+          endif
+        else if (segment%direction == OBC_DIRECTION_N .and. OBC%OBC_segment_v(i,j) == n) then
+          if (OBC%OBC_segment_number(OBC%OBC_segment_v(I,j))%specified) then
+            BT_OBC%vhbt(i,j) = segment%unhbt(i2,j2)
+            if (use_BT_cont) then
+               BT_OBC%vbt_outer(i,j) = vhbt_to_vbt(BT_OBC%vhbt(i,j),BTCL_v(i,j))
+            else
+              if (Datv(i,j) > 0.0) BT_OBC%vbt_outer(i,j) = BT_OBC%vhbt(i,j) / Datv(i,j)
+            endif
+          else
+            BT_OBC%Cg_v(i,j) = segment%Cg(i2,j2)
+            BT_OBC%H_v(i,j) = segment%htot(i2,j2)
+            BT_OBC%eta_outer_v(i,j) = segment%eta(i2,j2)
+            BT_OBC%vbt_outer(i,j) = segment%unbt(i2,j2)
+          endif
+        else if (segment%direction == OBC_DIRECTION_S .and. OBC%OBC_segment_v(i,j-1) == n) then
+          if (OBC%OBC_segment_number(OBC%OBC_segment_v(I,j-1))%specified) then
+            BT_OBC%vhbt(i,j-1) = segment%unhbt(i2,j2)
+            if (use_BT_cont) then
+               BT_OBC%vbt_outer(i,j-1) = vhbt_to_vbt(BT_OBC%vhbt(i,j-1),BTCL_v(i,j-1))
+            else
+              if (Datv(i,j-1) > 0.0) BT_OBC%vbt_outer(i,j-1) = BT_OBC%vhbt(i,j-1) / Datv(i,j-1)
+            endif
+          else
+            BT_OBC%Cg_v(i,j-1) = segment%Cg(i2,j2)
+            BT_OBC%H_v(i,j-1) = segment%htot(i2,j2)
+            BT_OBC%eta_outer_v(i,j-1) = segment%eta(i2,j2)
+            BT_OBC%vbt_outer(i,j-1) = segment%unbt(i2,j2)
+          endif
+!          if (i==1 .and. j==1) &
+!          print *,'U-normal at south segment (i=5,j=4) in BT_OBC= ',BT_OBC%vbt_outer(i,j-1)
+        endif
+      enddo
+    enddo
+
+  enddo
+
+! !!!!construction in progress
+
+!   if (apply_u_OBCs) then
+!     if (OBC%specified_u_BCs_exist_globally) then
+!       do k=1,nz ; do j=js,je ; do I=is-1,ie
+!         BT_OBC%uhbt(I,j) = BT_OBC%uhbt(I,j) + OBC%uh(I,j,k)
+!       enddo ; enddo ; enddo
+!     endif
+!     do j=js,je ; do I=is-1,ie ; if (OBC%OBC_segment_u(I,j) /= OBC_NONE) then
+!       if (OBC%OBC_segment_number(OBC%OBC_segment_u(I,j))%specified) then
+!         if (use_BT_cont) then
+!           BT_OBC%ubt_outer(I,j) = uhbt_to_ubt(BT_OBC%uhbt(I,j),BTCL_u(I,j))
+!         else
+!           if (Datu(I,j) > 0.0) BT_OBC%ubt_outer(I,j) = BT_OBC%uhbt(I,j) / Datu(I,j)
+!         endif
+!       else
+!         BT_OBC%Cg_u(I,j) = SQRT(GV%g_prime(1)*(0.5* &
+!                                 (G%bathyT(i,j) + G%bathyT(i+1,j))))
+!         if (GV%Boussinesq) then
+!           BT_OBC%H_u(I,j) = 0.5*((G%bathyT(i,j)*GV%m_to_H + eta(i,j)) + &
+!                                  (G%bathyT(i+1,j)*GV%m_to_H + eta(i+1,j)))
+!         else
+!           BT_OBC%H_u(I,j) = 0.5*(eta(i,j) + eta(i+1,j))
+!         endif
+!       endif
+!     endif ; enddo ; enddo
+!     if (associated(OBC%ubt_outer)) then ; do j=js,je ; do I=is-1,ie
+!       BT_OBC%ubt_outer(I,j) = OBC%ubt_outer(I,j)
+!     enddo ; enddo ; endif
+!     if (associated(OBC%eta_outer_u)) then ; do j=js,je ; do I=is-1,ie
+!       BT_OBC%eta_outer_u(I,j) = OBC%eta_outer_u(I,j)
+!     enddo ; enddo ; endif
+!   endif
+!   if (apply_v_OBCs) then
+!     if (OBC%specified_v_BCs_exist_globally) then
+!       do k=1,nz ; do J=js-1,je ; do i=is,ie
+!         BT_OBC%vhbt(i,J) = BT_OBC%vhbt(i,J) + OBC%vh(i,J,k)
+!       enddo ; enddo ; enddo
+!     endif
+
+!     do J=js-1,je ; do i=is,ie ; if (OBC%OBC_segment_v(i,J) /= OBC_NONE) then
+!       if (OBC%OBC_segment_number(OBC%OBC_segment_v(i,J))%specified) then
+!         if (use_BT_cont) then
+!           BT_OBC%vbt_outer(i,J) = vhbt_to_vbt(BT_OBC%vhbt(i,J),BTCL_v(i,J))
+!         else
+!           if (Datv(i,J) > 0.0) BT_OBC%vbt_outer(i,J) = BT_OBC%vhbt(i,J) / Datv(i,J)
+!         endif
+!       else
+!         BT_OBC%Cg_v(i,J) = SQRT(GV%g_prime(1)*(0.5* &
+!                                 (G%bathyT(i,j) + G%bathyT(i,j+1))))
+!         if (GV%Boussinesq) then
+!           BT_OBC%H_v(i,J) = 0.5*((G%bathyT(i,j)*GV%m_to_H + eta(i,j)) + &
+!                                  (G%bathyT(i,j+1)*GV%m_to_H + eta(i,j+1)))
+!         else
+!           BT_OBC%H_v(i,J) = 0.5*(eta(i,j) + eta(i,j+1))
+!         endif
+!       endif
+!     endif ; enddo ; enddo
+!     if (associated(OBC%vbt_outer)) then ; do J=js-1,je ; do i=is,ie
+!       BT_OBC%vbt_outer(i,J) = OBC%vbt_outer(i,J)
+!     enddo ; enddo ; endif
+!     if (associated(OBC%eta_outer_v)) then ; do J=js-1,je ; do i=is,ie
+!       BT_OBC%eta_outer_v(i,J) = OBC%eta_outer_v(i,J)
+!     enddo ; enddo ; endif
+!   endif
+
+end subroutine initialize_BT_OBC
+
 subroutine destroy_BT_OBC(BT_OBC)
   type(BT_OBC_type), intent(inout) :: BT_OBC
 
@@ -2861,7 +3086,6 @@ subroutine destroy_BT_OBC(BT_OBC)
   deallocate(BT_OBC%vbt_outer)
   deallocate(BT_OBC%eta_outer_v)
 end subroutine destroy_BT_OBC
-
 
 subroutine btcalc(h, G, GV, CS, h_u, h_v, may_use_default)
   type(ocean_grid_type),                  intent(inout) :: G
@@ -3301,7 +3525,6 @@ function vhbt_to_vbt(vhbt, BTC, guess) result(vbt)
 
 end function vhbt_to_vbt
 
-
 subroutine set_local_BT_cont_types(BT_cont, BTCL_u, BTCL_v, G, MS, BT_Domain, halo)
   type(BT_cont_type),                                    intent(inout) :: BT_cont
   type(memory_size_type),                                intent(in)    :: MS
@@ -3429,7 +3652,6 @@ subroutine set_local_BT_cont_types(BT_cont, BTCL_u, BTCL_v, G, MS, BT_Domain, ha
 !$OMP end parallel
 end subroutine set_local_BT_cont_types
 
-
 subroutine adjust_local_BT_cont_types(ubt, uhbt, vbt, vhbt, BTCL_u, BTCL_v, &
                                       G, MS, BT_Domain, halo)
   type(memory_size_type),                                intent(in)    :: MS
@@ -3533,7 +3755,6 @@ subroutine adjust_local_BT_cont_types(ubt, uhbt, vbt, vhbt, BTCL_u, BTCL_v, &
 !$OMP end parallel
 end subroutine adjust_local_BT_cont_types
 
-
 subroutine BT_cont_to_face_areas(BT_cont, Datu, Datv, G, MS, halo, maximize)
   type(BT_cont_type),                         intent(inout) :: BT_cont
   type(memory_size_type),                     intent(in)    :: MS
@@ -3598,7 +3819,6 @@ subroutine find_face_areas(Datu, Datv, G, GV, CS, MS, eta, halo, add_max)
 !  (in, opt) halo - The halo size to use, default = 1.
 !  (in, opt) add_max - A value to add to the maximum depth (used to overestimate
 !                      the external wave speed) in m.
-
 
 !   This subroutine determines the open face areas of cells for calculating
 ! the barotropic transport.

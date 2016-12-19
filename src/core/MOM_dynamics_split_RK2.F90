@@ -433,7 +433,7 @@ subroutine step_MOM_dyn_split_RK2(u, v, h, tv, visc, &
   if (showCallTree) call callTree_wayPoint("done with PressureForce (step_MOM_dyn_split_RK2)")
 
   if (associated(CS%OBC)) then; if (CS%OBC%update_OBC) then
-    call update_OBC_data(CS%OBC, G, h, Time_local)
+    call update_OBC_data(CS%OBC, G, GV, h, CS%eta_PF, Time_local)
   endif; endif
 
   if (G%nonblocking_updates) then
@@ -687,7 +687,7 @@ subroutine step_MOM_dyn_split_RK2(u, v, h, tv, visc, &
   endif
 
   if (associated(CS%OBC)) then; if (CS%OBC%update_OBC) then
-    call update_OBC_data(CS%OBC, G, h, Time_local)
+    call update_OBC_data(CS%OBC, G, GV, h, CS%eta_PF, Time_local)
   endif; endif
 
   if (G%nonblocking_updates) then
@@ -790,6 +790,10 @@ subroutine step_MOM_dyn_split_RK2(u, v, h, tv, visc, &
                       (v_bc_accel(i,J,k) + CS%v_accel_bt(i,J,k)))
     enddo ; enddo
   enddo
+
+!  print *,'MOM_dyn_split v at southern boundary (i=5,j=4)= ',v(5,4,1)
+!  print *,'MOM_dyn_split v at southern boundary (i=5,j=4)= ',G%mask2dCv(5,4)
+
   call cpu_clock_end(id_clock_mom_update)
 
   if (CS%debug) then
