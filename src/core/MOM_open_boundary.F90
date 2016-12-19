@@ -447,9 +447,10 @@ subroutine setup_u_point_obc(OBC, G, segment_str, l_seg)
     endif
 
     if (I_obc<G%HI%IscB .or. I_obc>G%HI%IecB) return ! Boundary is not on tile
-!   if (Js_obc<G%HI%JscB .or. Je_obc>G%HI%JecB) return ! Segment is not on tile
+    if (Js_obc<G%HI%JscB .and. Je_obc<G%HI%JscB) return ! Segment is not on tile
+    if (Js_obc<G%HI%JecB .and. Je_obc>G%HI%JecB) return ! Segment is not on tile
 
-   OBC%OBC_segment_number(l_seg)%on_pe = .true.
+    OBC%OBC_segment_number(l_seg)%on_pe = .true.
 
     do j=G%HI%jsd, G%HI%jed
       if (j>=Js_obc .and. j<=Je_obc) then
@@ -458,7 +459,6 @@ subroutine setup_u_point_obc(OBC, G, segment_str, l_seg)
         else
             OBC%OBC_segment_u(I_obc-1,j) = l_seg
         endif
-
 !        if (Je_obc>Js_obc) then ! East is outward
 !          if (this_kind == OBC_FLATHER) then
 !            ! Set v points outside segment
@@ -572,7 +572,10 @@ subroutine setup_v_point_obc(OBC, G, segment_str, l_seg)
     endif
 
     if (J_obc<G%HI%JscB .or. J_obc>G%HI%JecB) return ! Boundary is not on tile
-!    if (Is_obc<G%HI%IscB .or. Ie_obc>G%HI%IecB) return ! Segment is not on tile
+    if (Is_obc<G%HI%IscB .and. Ie_obc<G%HI%IscB) return ! Segment is not on tile
+    if (Is_obc<G%HI%IecB .and. Ie_obc>G%HI%IecB) return ! Segment is not on tile
+
+    OBC%OBC_segment_number(l_seg)%on_pe = .true.
 
     do i=G%HI%isd, G%HI%ied
       if (i>=Is_obc .and. i<=Ie_obc) then
@@ -581,9 +584,6 @@ subroutine setup_v_point_obc(OBC, G, segment_str, l_seg)
         else
           OBC%OBC_segment_v(i,J_obc-1) = l_seg
         endif
-
-        OBC%OBC_segment_number(l_seg)%on_pe = .true.
-
  !       if (Is_obc>Ie_obc) then ! North is outward
  !         if (this_kind == OBC_FLATHER) then
  !           ! Set u points outside segment
