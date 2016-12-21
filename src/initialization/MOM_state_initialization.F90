@@ -455,7 +455,7 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, PF, dirs, &
               "OBC_CONFIG = "//trim(config)//" have not been fully implemented.")
     endif
   endif
-  if (open_boundary_query(OBC, apply_Flather_OBC=.true.)) then
+  if (open_boundary_query(OBC, apply_Flather_OBC=.true.) ) then
     call set_Flather_data(OBC, tv, h, G, PF, tracer_Reg)
   endif
 
@@ -1820,7 +1820,7 @@ subroutine MOM_temp_salt_initialize_from_Z(h, tv, G, GV, PF, dirs)
     allocate( h1(isd:ied,jsd:jed,nz) ) ; h1(:,:,:) = 0.
     allocate( tmpT1dIn(isd:ied,jsd:jed,nz) ) ; tmpT1dIn(:,:,:) = 0.
     allocate( tmpS1dIn(isd:ied,jsd:jed,nz) ) ; tmpS1dIn(:,:,:) = 0.
-    do j = js, je ; do i = is, ie
+    do j = jsd, jed ; do i = isd, ied
       if (G%mask2dT(i,j)>0.) then
         zTopOfCell = 0. ; zBottomOfCell = 0. ; nPoints = 0
         tmp_mask_in(i,j,1:kd) = mask_z(i,j,:)
@@ -1856,7 +1856,7 @@ subroutine MOM_temp_salt_initialize_from_Z(h, tv, G, GV, PF, dirs)
 
     if (.not. remap_general) then
       ! This is the old way of initializing to z* coordinates only
-      do j = js, je ; do i = is, ie
+      do j = jsd, jed ; do i = isd, ied
         h(i,j,:) = 0.
         if (G%mask2dT(i,j)>0.) then
           ! Build the target grid combining hTarget and topography
@@ -1879,7 +1879,7 @@ subroutine MOM_temp_salt_initialize_from_Z(h, tv, G, GV, PF, dirs)
     if (remap_general) then
       call set_regrid_params( regridCS, min_thickness=0. )
       h(:,:,:) = h1(:,:,:) ; tv%T(:,:,:) = tmpT1dIn(:,:,:) ; tv%S(:,:,:) = tmpS1dIn(:,:,:)
-      do j = js, je ; do i = is, ie
+      do j = jsd, jed ; do i = isd, ied
         if (G%mask2dT(i,j)==0.) then ! Ensure there are no nonsense values on land
           h(i,j,:) = 0. ; tv%T(i,j,:) = 0. ; tv%S(i,j,:) = 0.
         endif
@@ -2014,6 +2014,7 @@ subroutine MOM_temp_salt_initialize_from_Z(h, tv, G, GV, PF, dirs)
 
   call callTree_leave(trim(mod)//'()')
   call cpu_clock_end(id_clock_routine)
+
 
 end subroutine MOM_temp_salt_initialize_from_Z
 

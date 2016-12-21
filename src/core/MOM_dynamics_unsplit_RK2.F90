@@ -322,7 +322,17 @@ subroutine step_MOM_dyn_unsplit_RK2(u_in, v_in, h_in, tv, visc, Time_local, dt, 
   call cpu_clock_end(id_clock_pass)
 
   if (associated(CS%OBC)) then; if (CS%OBC%update_OBC) then
-    call update_OBC_data(CS%OBC, G, h_in, Time_local)
+    ! update surface height here for aux field updates for OBCs
+    if (GV%Boussinesq) then
+      do j=js,je ; do i=is,ie ; eta_av(i,j) = -G%bathyT(i,j) ; enddo ; enddo
+    else
+      do j=js,je ; do i=is,ie ; eta_av(i,j) = 0.0 ; enddo ; enddo
+    endif
+    do k=1,nz ; do j=js,je ; do i=is,ie
+      eta_av(i,j) = eta_av(i,j) + h_av(i,j,k)
+    enddo ; enddo ; enddo
+
+    call update_OBC_data(CS%OBC, G, GV, h_in, eta_av, Time_local)
   endif; endif
 
 ! up+[n-1/2] = u[n-1] + dt_pred * (PFu + CAu)
