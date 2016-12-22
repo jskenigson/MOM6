@@ -205,7 +205,7 @@ subroutine step_MOM_dyn_split_RK2(u, v, h, tv, visc, &
   real, dimension(SZIB_(G),SZJ_(G),SZK_(G)), target, intent(inout) :: u     !< zonal velocity (m/s)
   real, dimension(SZI_(G),SZJB_(G),SZK_(G)), target, intent(inout) :: v     !< merid velocity (m/s)
   real, dimension(SZI_(G),SZJ_(G),SZK_(G)),  intent(inout) :: h             !< layer thickness (m or kg/m2)
-  type(thermo_var_ptrs),                     intent(in)    :: tv            !< thermodynamic type
+  type(thermo_var_ptrs),                     intent(inout)    :: tv            !< thermodynamic type
   type(vertvisc_type),                       intent(inout) :: visc          !< vertical visc, bottom drag, and related
   type(time_type),                           intent(in)    :: Time_local    !< model time at end of time step
   real,                                      intent(in)    :: dt            !< time step (sec)
@@ -433,7 +433,7 @@ subroutine step_MOM_dyn_split_RK2(u, v, h, tv, visc, &
   if (showCallTree) call callTree_wayPoint("done with PressureForce (step_MOM_dyn_split_RK2)")
 
   if (associated(CS%OBC)) then; if (CS%OBC%update_OBC) then
-    call update_OBC_data(CS%OBC, G, GV, h, CS%eta_PF, Time_local)
+    call update_OBC_data(CS%OBC, G, GV, tv, h, CS%eta_PF, Time_local)
   endif; endif
 
   if (G%nonblocking_updates) then
@@ -687,7 +687,7 @@ subroutine step_MOM_dyn_split_RK2(u, v, h, tv, visc, &
   endif
 
   if (associated(CS%OBC)) then; if (CS%OBC%update_OBC) then
-    call update_OBC_data(CS%OBC, G, GV, h, CS%eta_PF, Time_local)
+    call update_OBC_data(CS%OBC, G, GV, tv, h, CS%eta_PF, Time_local)
   endif; endif
 
   if (G%nonblocking_updates) then

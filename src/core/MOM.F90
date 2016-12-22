@@ -4,7 +4,7 @@ module MOM
 ! This file is part of MOM6. See LICENSE.md for the license.
 
 use MOM_variables, only : vertvisc_type
-use MOM_open_boundary, only : ocean_OBC_type
+use MOM_open_boundary, only : ocean_OBC_type, fill_OBC_halos
 
 ! A Structure with pointers to forcing fields to drive MOM;
 ! all fluxes are positive downward.
@@ -649,6 +649,8 @@ subroutine step_MOM(fluxes, state, Time_start, time_interval, CS)
     if (showCallTree) call callTree_enter("DT cycles (step_MOM) n=",n)
     call cpu_clock_end(id_clock_other)
 
+    call fill_OBC_halos(CS%G, CS%GV, CS%OBC, CS%tv, CS%h,CS%tracer_reg)
+ 
     if (CS%diabatic_first .and. (CS%dt_trans==0.0)) then ! do thermodynamics.
 
       if (thermo_does_span_coupling) then

@@ -318,7 +318,7 @@ type, public :: barotropic_CS ; private
   type(group_pass_type) :: pass_tmp_uv, pass_eta_bt_rem
   type(group_pass_type) :: pass_force_hbt0_Cor_ref, pass_Dat_uv
   type(group_pass_type) :: pass_eta_ubt, pass_etaav
-  type(group_pass_type) :: pass_ubta_uhbta, pass_e_anom, pass_OBC
+  type(group_pass_type) :: pass_ubta_uhbta, pass_e_anom, pass_OBC, pass_OBC_uv
 
   integer :: id_PFu_bt = -1, id_PFv_bt = -1, id_Coru_bt = -1, id_Corv_bt = -1
   integer :: id_ubtforce = -1, id_vbtforce = -1, id_uaccel = -1, id_vaccel = -1
@@ -991,17 +991,19 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, &
   if (apply_OBCs) then
     if (OBC%number_of_segments > 0) then
        call initialize_BT_OBC(G,GV,MS,OBC,eta,BT_OBC, use_BT_cont, Datu, Datv, BTCL_u, BTCL_v)
-       call create_group_pass(CS%pass_OBC, BT_OBC%ubt_outer, BT_OBC%vbt_outer, CS%BT_Domain, &
-            To_All+Scalar_Pair)
-       call create_group_pass(CS%pass_OBC, BT_OBC%uhbt, BT_OBC%vhbt, CS%BT_Domain, &
-            To_All+Scalar_Pair)
+       call create_group_pass(CS%pass_OBC_uv, BT_OBC%ubt_outer, BT_OBC%vbt_outer, CS%BT_Domain)
+       call create_group_pass(CS%pass_OBC_uv, BT_OBC%uhbt, BT_OBC%vhbt, CS%BT_Domain)
+       call create_group_pass(CS%pass_OBC_uv, BT_OBC%Cg_u, BT_OBC%Cg_v, CS%BT_Domain)
        call create_group_pass(CS%pass_OBC, BT_OBC%eta_outer_u, BT_OBC%eta_outer_v, CS%BT_Domain,&
             To_All+Scalar_Pair)
-       call create_group_pass(CS%pass_OBC, BT_OBC%H_u, CS%BT_Domain)
+       call create_group_pass(CS%pass_OBC, BT_OBC%H_u, BT_OBC%H_v, CS%BT_Domain, &
+            To_All+Scalar_Pair)
        if (nonblock_setup) then
          call start_group_pass(CS%pass_OBC, CS%BT_Domain)
+         call start_group_pass(CS%pass_OBC_uv, CS%BT_Domain)
        else
          call do_group_pass(CS%pass_OBC, CS%BT_Domain)
+         call do_group_pass(CS%pass_OBC_uv, CS%BT_Domain)
        endif
     else
       call set_up_BT_OBC(OBC, eta, BT_OBC, G, GV, MS, ievf-ie, use_BT_cont, &
@@ -1713,7 +1715,10 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, &
       endif
     endif
 
-    if (nonblock_setup .and. OBC%number_of_segments > 0) call complete_group_pass(CS%pass_OBC, CS%BT_Domain)
+    if (nonblock_setup .and. OBC%number_of_segments > 0) then
+      call complete_group_pass(CS%pass_OBC, CS%BT_Domain)
+      call complete_group_pass(CS%pass_OBC_uv, CS%BT_Domain)
+    endif
 
 !GOMP parallel default(none) shared(isv,iev,jsv,jev,G,amer,ubt,cmer,bmer,dmer,eta_PF_BT, &
 !GOMP                               eta_PF,gtot_N,gtot_S,dgeo_de,CS,p_surf_dyn,n,        &
@@ -1978,7 +1983,6 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, &
           vhbt_sum(i,J) = vhbt_sum(i,J) + wt_trans(n) * vhbt(i,J)
           vbt_wtd(i,J) = vbt_wtd(i,J) + wt_vel(n) * vbt(i,J)
         endif
-!        print *,'vbt_sum at southern boundary (i=5,j=4)= ',vbt_sum(5,4)
       enddo ; enddo ; endif
     endif
 
@@ -1996,8 +2000,6 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, &
     enddo ; enddo
     if (apply_OBCs) call apply_eta_OBCs(OBC, eta, ubt_old, vbt_old, BT_OBC, &
                                         G, MS, iev-ie, dtbt)
-
-!    print *,'eta at southern boundary (i=5,j=4) = ',eta(5,4)
 
     if (do_hifreq_output) then
       time_step_end = time_bt_start + set_time(int(floor(n*dtbt+0.5)))
@@ -2629,8 +2631,6 @@ subroutine apply_velocity_OBCs(OBC, ubt, vbt, uhbt, vhbt, ubt_trans, vbt_trans, 
     endif ; enddo ; enddo
   endif
 
-!  print *,'VBT_TRANS at southern segment (i=5,j=4)= ',vbt_trans(5,4)
-
 end subroutine apply_velocity_OBCs
 
 subroutine apply_eta_OBCs(OBC, eta, ubt, vbt, BT_OBC, G, MS, halo, dtbt)
@@ -2954,20 +2954,45 @@ subroutine initialize_BT_OBC(G,GV,MS,OBC, eta, BT_OBC, use_BT_cont, Datu, Datv, 
             BT_OBC%eta_outer_u(i,j) = segment%eta(i2,j2)
             BT_OBC%ubt_outer(i,j) = segment%unbt(i2,j2)
           endif
-        else if (segment%direction == OBC_DIRECTION_W .and. OBC%OBC_segment_u(i-1,j) == n) then
-          if (OBC%OBC_segment_number(OBC%OBC_segment_u(I-1,j))%specified) then
-            BT_OBC%uhbt(i-1,j) = segment%unhbt(i2,j2)  !! NOTE: segment arrays are not staggered
+          if (i==segment%ie_obc.and.j==segment%js_obc) then
+            BT_OBC%Cg_u(i:iedw,jsdw:j)=BT_OBC%Cg_u(i,j)
+            BT_OBC%H_u(i:iedw,jsdw:j)=BT_OBC%H_u(i,j)
+            BT_OBC%eta_outer_u(i:iedw,jsdw:j)=BT_OBC%eta_outer_u(i,j)
+            BT_OBC%ubt_outer(i:iedw,jsdw:j)=BT_OBC%ubt_outer(i,j)
+          endif
+          if (i==segment%ie_obc.and.j==segment%je_obc) then
+            BT_OBC%Cg_u(i:iedw,j:jedw)=BT_OBC%Cg_u(i,j)
+            BT_OBC%H_u(i:iedw,j:jedw)=BT_OBC%H_u(i,j)
+            BT_OBC%eta_outer_u(i:iedw,j:jedw)=BT_OBC%eta_outer_u(i,j)
+            BT_OBC%ubt_outer(i:iedw,j:jedw)=BT_OBC%ubt_outer(i,j)
+          endif
+
+        else if (segment%direction == OBC_DIRECTION_W .and. OBC%OBC_segment_u(i,j) == n) then
+          if (OBC%OBC_segment_number(OBC%OBC_segment_u(I,j))%specified) then
+            BT_OBC%uhbt(i,j) = segment%unhbt(i2,j2)  !! NOTE: segment arrays are not staggered
                                                        !! They are defined at the outer boundary
             if (use_BT_cont) then
-               BT_OBC%ubt_outer(i-1,j) = uhbt_to_ubt(BT_OBC%uhbt(i-1,j),BTCL_u(i-1,j))
+               BT_OBC%ubt_outer(i,j) = uhbt_to_ubt(BT_OBC%uhbt(i,j),BTCL_u(i,j))
             else
-              if (Datu(i-1,j) > 0.0) BT_OBC%ubt_outer(i-1,j) = BT_OBC%uhbt(i-1,j) / Datu(i-1,j)
+              if (Datu(i,j) > 0.0) BT_OBC%ubt_outer(i,j) = BT_OBC%uhbt(i,j) / Datu(i,j)
             endif
           else
-            BT_OBC%Cg_u(i-1,j) = segment%Cg(i2,j2)
-            BT_OBC%H_u(i-1,j) = segment%htot(i2,j2)
-            BT_OBC%eta_outer_u(i-1,j) = segment%eta(i2,j2)
-            BT_OBC%ubt_outer(i-1,j) = segment%unbt(i2,j2)
+            BT_OBC%Cg_u(i,j) = segment%Cg(i2,j2)
+            BT_OBC%H_u(i,j) = segment%htot(i2,j2)
+            BT_OBC%eta_outer_u(i,j) = segment%eta(i2,j2)
+            BT_OBC%ubt_outer(i,j) = segment%unbt(i2,j2)
+          endif
+          if (i==segment%is_obc.and.j==segment%js_obc) then
+            BT_OBC%Cg_u(isdw-1:i,jsdw:j)=BT_OBC%Cg_u(i,j)
+            BT_OBC%H_u(isdw-1:i,jsdw:j)=BT_OBC%H_u(i,j)
+            BT_OBC%eta_outer_u(isdw-1:i,jsdw:j)=BT_OBC%eta_outer_u(i,j)
+            BT_OBC%ubt_outer(isdw-1:i,jsdw:j)=BT_OBC%ubt_outer(i,j)
+          endif
+          if (i==segment%is_obc.and.j==segment%je_obc) then
+            BT_OBC%Cg_u(isdw-1:i,j:jedw)=BT_OBC%Cg_u(i,j)
+            BT_OBC%H_u(isdw-1:i,j:jedw)=BT_OBC%H_u(i,j)
+            BT_OBC%eta_outer_u(isdw-1:i,j:jedw)=BT_OBC%eta_outer_u(i,j)
+            BT_OBC%ubt_outer(isdw-1:i,j:jedw)=BT_OBC%ubt_outer(i,j)
           endif
         else if (segment%direction == OBC_DIRECTION_N .and. OBC%OBC_segment_v(i,j) == n) then
           if (OBC%OBC_segment_number(OBC%OBC_segment_v(I,j))%specified) then
@@ -2983,26 +3008,49 @@ subroutine initialize_BT_OBC(G,GV,MS,OBC, eta, BT_OBC, use_BT_cont, Datu, Datv, 
             BT_OBC%eta_outer_v(i,j) = segment%eta(i2,j2)
             BT_OBC%vbt_outer(i,j) = segment%unbt(i2,j2)
           endif
-        else if (segment%direction == OBC_DIRECTION_S .and. OBC%OBC_segment_v(i,j-1) == n) then
-          if (OBC%OBC_segment_number(OBC%OBC_segment_v(I,j-1))%specified) then
-            BT_OBC%vhbt(i,j-1) = segment%unhbt(i2,j2)
+          if (j==segment%je_obc.and.i==segment%is_obc) then
+            BT_OBC%Cg_v(isdw:i,j:jedw)=BT_OBC%Cg_v(i,j)
+            BT_OBC%H_v(isdw:i,j:jedw)=BT_OBC%H_v(i,j)
+            BT_OBC%eta_outer_v(isdw:i,j:jedw)=BT_OBC%eta_outer_v(i,j)
+            BT_OBC%vbt_outer(isdw:i,j:jedw)=BT_OBC%vbt_outer(i,j)
+          endif
+          if (j==segment%js_obc.and.i==segment%ie_obc) then
+            BT_OBC%Cg_v(i:iedw,j:jedw)=BT_OBC%Cg_v(i,j)
+            BT_OBC%H_v(i:iedw,j:jedw)=BT_OBC%H_v(i,j)
+            BT_OBC%eta_outer_v(i:iedw,j:jedw)=BT_OBC%eta_outer_u(i,j)
+            BT_OBC%vbt_outer(i:iedw,j:jedw)=BT_OBC%vbt_outer(i,j)
+          endif
+
+        else if (segment%direction == OBC_DIRECTION_S .and. OBC%OBC_segment_v(i,j) == n) then
+          if (OBC%OBC_segment_number(OBC%OBC_segment_v(I,j))%specified) then
+            BT_OBC%vhbt(i,j) = segment%unhbt(i2,j2)
             if (use_BT_cont) then
-               BT_OBC%vbt_outer(i,j-1) = vhbt_to_vbt(BT_OBC%vhbt(i,j-1),BTCL_v(i,j-1))
+               BT_OBC%vbt_outer(i,j) = vhbt_to_vbt(BT_OBC%vhbt(i,j),BTCL_v(i,j))
             else
-              if (Datv(i,j-1) > 0.0) BT_OBC%vbt_outer(i,j-1) = BT_OBC%vhbt(i,j-1) / Datv(i,j-1)
+              if (Datv(i,j) > 0.0) BT_OBC%vbt_outer(i,j) = BT_OBC%vhbt(i,j) / Datv(i,j)
             endif
           else
-            BT_OBC%Cg_v(i,j-1) = segment%Cg(i2,j2)
-            BT_OBC%H_v(i,j-1) = segment%htot(i2,j2)
-            BT_OBC%eta_outer_v(i,j-1) = segment%eta(i2,j2)
-            BT_OBC%vbt_outer(i,j-1) = segment%unbt(i2,j2)
+            BT_OBC%Cg_v(i,j) = segment%Cg(i2,j2)
+            BT_OBC%H_v(i,j) = segment%htot(i2,j2)
+            BT_OBC%eta_outer_v(i,j) = segment%eta(i2,j2)
+            BT_OBC%vbt_outer(i,j) = segment%unbt(i2,j2)
           endif
-!          if (i==1 .and. j==1) &
-!          print *,'U-normal at south segment (i=5,j=4) in BT_OBC= ',BT_OBC%vbt_outer(i,j-1)
+          if (j==segment%js_obc.and.i==segment%is_obc) then
+            BT_OBC%Cg_v(isdw:i,jsdw-1:j)=BT_OBC%Cg_v(i,j)
+            BT_OBC%H_v(isdw:i,jsdw-1:j)=BT_OBC%H_v(i,j)
+            BT_OBC%eta_outer_v(isdw:i,jsdw-1:j)=BT_OBC%eta_outer_v(i,j)
+            BT_OBC%vbt_outer(isdw:i,jsdw-1:j)=BT_OBC%vbt_outer(i,j)
+          endif
+          if (j==segment%js_obc.and.i==segment%ie_obc) then
+            BT_OBC%Cg_v(i:iedw,jsdw-1:j)=BT_OBC%Cg_v(i,j)
+            BT_OBC%H_v(i:iedw,jsdw-1:j)=BT_OBC%H_v(i,j)
+            BT_OBC%eta_outer_v(i:iedw,jsdw-1:j)=BT_OBC%eta_outer_v(i,j)
+            BT_OBC%vbt_outer(i:iedw,jsdw-1:j)=BT_OBC%vbt_outer(i,j)
+          endif
+
         endif
       enddo
     enddo
-
   enddo
 
 ! !!!!construction in progress
