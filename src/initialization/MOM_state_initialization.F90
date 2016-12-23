@@ -455,7 +455,7 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, PF, dirs, &
               "OBC_CONFIG = "//trim(config)//" have not been fully implemented.")
     endif
   endif
-  if (open_boundary_query(OBC, apply_Flather_OBC=.true.)) then
+  if (open_boundary_query(OBC, apply_Flather_OBC=.true.) ) then
     call set_Flather_data(OBC, tv, h, G, PF, tracer_Reg)
   endif
 
@@ -1856,8 +1856,6 @@ subroutine MOM_temp_salt_initialize_from_Z(h, tv, G, GV, PF, dirs)
 
     if (.not. remap_general) then
       ! This is the old way of initializing to z* coordinates only
-      allocate( hTarget(nz) )
-      hTarget = getCoordinateResolution( regridCS )
       do j = js, je ; do i = is, ie
         h(i,j,:) = 0.
         if (G%mask2dT(i,j)>0.) then
@@ -2016,6 +2014,7 @@ subroutine MOM_temp_salt_initialize_from_Z(h, tv, G, GV, PF, dirs)
 
   call callTree_leave(trim(mod)//'()')
   call cpu_clock_end(id_clock_routine)
+
 
 end subroutine MOM_temp_salt_initialize_from_Z
 

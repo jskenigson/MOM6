@@ -186,7 +186,7 @@ subroutine step_MOM_dyn_unsplit(u, v, h, tv, visc, Time_local, dt, fluxes, &
   real, dimension(SZIB_(G),SZJ_(G),SZK_(G)), intent(inout) :: u
   real, dimension(SZI_(G),SZJB_(G),SZK_(G)), intent(inout) :: v
   real, dimension(SZI_(G),SZJ_(G),SZK_(G)),  intent(inout) :: h
-  type(thermo_var_ptrs),                     intent(in)    :: tv
+  type(thermo_var_ptrs),                     intent(inout)    :: tv
   type(vertvisc_type),                       intent(inout) :: visc
   type(time_type),                           intent(in)    :: Time_local
   real,                                      intent(in)    :: dt
@@ -327,7 +327,17 @@ subroutine step_MOM_dyn_unsplit(u, v, h, tv, visc, Time_local, dt, fluxes, &
   call cpu_clock_end(id_clock_pres)
 
   if (associated(CS%OBC)) then; if (CS%OBC%update_OBC) then
-    call update_OBC_data(CS%OBC, G, h, Time_local)
+    ! calculate eta at this stage so that OBC aux data can be updated
+    if (GV%Boussinesq) then
+      do j=js,je ; do i=is,ie ; eta_av(i,j) = -G%bathyT(i,j) ; enddo ; enddo
+    else
+      do j=js,je ; do i=is,ie ; eta_av(i,j) = 0.0 ; enddo ; enddo
+    endif
+    do k=1,nz ; do j=js,je ; do i=is,ie
+      eta_av(i,j) = eta_av(i,j) + h_av(i,j,k)
+    enddo ; enddo ; enddo
+
+    call update_OBC_data(CS%OBC, G, GV, tv, h, eta_av, Time_local)
   endif; endif
 
 ! up = u + dt_pred * (PFu + CAu)
@@ -413,8 +423,9 @@ subroutine step_MOM_dyn_unsplit(u, v, h, tv, visc, Time_local, dt, fluxes, &
                      CS%PressureForce_CSp, CS%ALE_CSp, p_surf)
   call cpu_clock_end(id_clock_pres)
 
+! why is this being called a second time  ? (mjh)
   if (associated(CS%OBC)) then; if (CS%OBC%update_OBC) then
-    call update_OBC_data(CS%OBC, G, h, Time_local)
+    call update_OBC_data(CS%OBC, G, GV, tv, h, eta_av, Time_local)
   endif; endif
 
 ! upp = u + dt/2 * ( PFu + CAu )
@@ -492,7 +503,7 @@ subroutine step_MOM_dyn_unsplit(u, v, h, tv, visc, Time_local, dt, fluxes, &
   call cpu_clock_end(id_clock_pres)
 
   if (associated(CS%OBC)) then; if (CS%OBC%update_OBC) then
-    call update_OBC_data(CS%OBC, G, h, Time_local)
+    call update_OBC_data(CS%OBC, G, GV, tv, h, eta_av, Time_local)
   endif; endif
 
 ! u = u + dt * ( PFu + CAu )

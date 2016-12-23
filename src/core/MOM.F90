@@ -4,7 +4,7 @@ module MOM
 ! This file is part of MOM6. See LICENSE.md for the license.
 
 use MOM_variables, only : vertvisc_type
-use MOM_open_boundary, only : ocean_OBC_type
+use MOM_open_boundary, only : ocean_OBC_type, fill_OBC_halos
 
 ! A Structure with pointers to forcing fields to drive MOM;
 ! all fluxes are positive downward.
@@ -358,7 +358,7 @@ type, public :: MOM_control_struct
   ! Diagnostics for tracer horizontal transport
   integer :: id_uhtr = -1, id_umo = -1, id_umo_2d = 1
   integer :: id_vhtr = -1, id_vmo = -1, id_vmo_2d = 1
-  
+
   ! The remainder provides pointers to child module control structures.
   type(MOM_dyn_unsplit_CS),      pointer :: dyn_unsplit_CSp      => NULL()
   type(MOM_dyn_unsplit_RK2_CS),  pointer :: dyn_unsplit_RK2_CSp  => NULL()
@@ -651,6 +651,8 @@ subroutine step_MOM(fluxes, state, Time_start, time_interval, CS)
     if (showCallTree) call callTree_enter("DT cycles (step_MOM) n=",n)
     call cpu_clock_end(id_clock_other)
 
+    call fill_OBC_halos(CS%G, CS%GV, CS%OBC, CS%tv, CS%h,CS%tracer_reg)
+ 
     if (CS%diabatic_first .and. (CS%dt_trans==0.0)) then ! do thermodynamics.
 
       if (thermo_does_span_coupling) then
