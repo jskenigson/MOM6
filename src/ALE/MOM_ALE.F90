@@ -596,7 +596,7 @@ subroutine ALE_build_grid( G, GV, regridCS, remapCS, h, tv, debug, frac_shelf_h 
   ! Override old grid with new one. The new grid 'h_new' is built in
   ! one of the 'build_...' routines above.
 !$OMP parallel do default(none) shared(G,h,h_new)
-  do j = G%jsd,G%jed ; do i = G%isd,G%ied
+  do j = G%jsc,G%jec ; do i = G%isc,G%iec
     if (G%mask2dT(i,j)>0.) h(i,j,:) = h_new(i,j,:)
   enddo ; enddo
 

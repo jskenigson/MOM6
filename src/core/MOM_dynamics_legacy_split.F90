@@ -275,7 +275,7 @@ subroutine step_MOM_dyn_legacy_split(u, v, h, tv, visc, &
   real, dimension(SZIB_(G),SZJ_(G),SZK_(G)), target, intent(inout) :: u
   real, dimension(SZI_(G),SZJB_(G),SZK_(G)), target, intent(inout) :: v
   real, dimension(SZI_(G),SZJ_(G),SZK_(G)),  intent(inout) :: h
-  type(thermo_var_ptrs),                     intent(in)    :: tv
+  type(thermo_var_ptrs),                     intent(inout)    :: tv
   type(vertvisc_type),                       intent(inout) :: visc
   type(time_type),                           intent(in)    :: Time_local
   real,                                      intent(in)    :: dt
@@ -497,7 +497,7 @@ subroutine step_MOM_dyn_legacy_split(u, v, h, tv, visc, &
   endif
 
   if (associated(CS%OBC)) then; if (CS%OBC%update_OBC) then
-    call update_OBC_data(CS%OBC, G, GV, h, CS%eta_PF, Time_local)
+    call update_OBC_data(CS%OBC, G, GV, tv, h, CS%eta_PF, Time_local)
   endif; endif
 
 ! CAu = -(f+zeta_av)/h_av vh + d/dx KE_av
@@ -790,7 +790,7 @@ subroutine step_MOM_dyn_legacy_split(u, v, h, tv, visc, &
   endif
 
   if (associated(CS%OBC)) then; if (CS%OBC%update_OBC) then
-    call update_OBC_data(CS%OBC, G, GV, h, CS%eta_PF, Time_local)
+    call update_OBC_data(CS%OBC, G, GV, tv, h, CS%eta_PF, Time_local)
   endif; endif
 
   if (BT_cont_BT_thick) then

@@ -36,6 +36,7 @@ public open_boundary_impose_land_mask
 public radiation_open_bdry_conds
 public set_Flather_data
 public update_obc_segment_data
+public fill_OBC_halos
 
 integer, parameter, public :: OBC_NONE = 0, OBC_SIMPLE = 1, OBC_WALL = 2
 integer, parameter, public :: OBC_FLATHER = 3
@@ -381,6 +382,7 @@ subroutine setup_u_point_obc(OBC, G, segment_str, l_seg)
   if (Je_obc<Js_obc) then
     OBC%OBC_segment_number(l_seg)%direction = OBC_DIRECTION_W
     j=Js_obc;Js_obc=Je_obc;Je_obc=j
+    I_obc = I_obc-1
   else
     OBC%OBC_segment_number(l_seg)%direction = OBC_DIRECTION_E
   endif
@@ -446,19 +448,25 @@ subroutine setup_u_point_obc(OBC, G, segment_str, l_seg)
                      "String '"//trim(action_str(a_loop))//"' not understood.")
     endif
 
-    if (I_obc<G%HI%IscB .or. I_obc>G%HI%IecB) return ! Boundary is not on tile
-    if (Js_obc<G%HI%JscB .and. Je_obc<G%HI%JscB) return ! Segment is not on tile
-    if (Js_obc<G%HI%JecB .and. Je_obc>G%HI%JecB) return ! Segment is not on tile
+    if (I_obc<G%HI%IscB .or. I_obc>G%HI%IecB) then
+      return ! Boundary is not on tile
+    endif
+
+    if (Js_obc<G%HI%JscB .and. Je_obc<G%HI%JscB) then
+      return ! Segment is not on tile
+    endif
+
+    if (Js_obc>G%HI%JecB) then
+      return ! Segment is not on tile
+    endif
 
     OBC%OBC_segment_number(l_seg)%on_pe = .true.
 
     do j=G%HI%jsd, G%HI%jed
-      if (j>=Js_obc .and. j<=Je_obc) then
-        if (OBC%OBC_segment_number(l_seg)%direction == OBC_DIRECTION_E) then
-          OBC%OBC_segment_u(I_obc,j) = l_seg
-        else
-            OBC%OBC_segment_u(I_obc-1,j) = l_seg
-        endif
+      if (j>=Js_obc-1 .and. j<=Je_obc+1) then ! include corners
+
+        OBC%OBC_segment_u(I_obc,j) = l_seg
+
 !        if (Je_obc>Js_obc) then ! East is outward
 !          if (this_kind == OBC_FLATHER) then
 !            ! Set v points outside segment
@@ -509,6 +517,7 @@ subroutine setup_v_point_obc(OBC, G, segment_str, l_seg)
     i=Is_obc;Is_obc=Ie_obc;Ie_obc=i
   else
     OBC%OBC_segment_number(l_seg)%direction = OBC_DIRECTION_S
+    J_obc=J_obc-1
   endif
 
   OBC%OBC_segment_number(l_seg)%global_indices = (/Is_obc,Ie_obc,J_obc,J_obc/)
@@ -571,19 +580,25 @@ subroutine setup_v_point_obc(OBC, G, segment_str, l_seg)
                      "String '"//trim(action_str(a_loop))//"' not understood.")
     endif
 
-    if (J_obc<G%HI%JscB .or. J_obc>G%HI%JecB) return ! Boundary is not on tile
-    if (Is_obc<G%HI%IscB .and. Ie_obc<G%HI%IscB) return ! Segment is not on tile
-    if (Is_obc<G%HI%IecB .and. Ie_obc>G%HI%IecB) return ! Segment is not on tile
+    if (J_obc<G%HI%JscB .or. J_obc>G%HI%JecB) then
+      return ! Boundary is not on tile
+    endif
+
+    if (Is_obc<G%HI%IscB .and. Ie_obc<G%HI%IscB) then
+      return ! Segment is not on tile
+    endif
+
+    if (Is_obc>G%HI%IecB) then
+      return ! Segment is not on tile
+    endif
+
 
     OBC%OBC_segment_number(l_seg)%on_pe = .true.
 
     do i=G%HI%isd, G%HI%ied
-      if (i>=Is_obc .and. i<=Ie_obc) then
-        if (OBC%OBC_segment_number(l_seg)%direction == OBC_DIRECTION_N) then
-          OBC%OBC_segment_v(i,J_obc) = l_seg
-        else
-          OBC%OBC_segment_v(i,J_obc-1) = l_seg
-        endif
+      if (i>=Is_obc-1 .and. i<=Ie_obc+1) then ! include corners
+        OBC%OBC_segment_v(i,J_obc) = l_seg
+
  !       if (Is_obc>Ie_obc) then ! North is outward
  !         if (this_kind == OBC_FLATHER) then
  !           ! Set u points outside segment
@@ -733,7 +748,6 @@ end subroutine parse_segment_str
       if (trim(word1) == '') exit
       nfields=nfields+1
       word2 = extract_word(word1,'=',1,debug=dbg)
-!      print *,'nfields,field=',nfields,trim(word2)
       flds(nfields) = trim(word2)
    enddo
 
@@ -751,14 +765,12 @@ end subroutine parse_segment_str
    m=0
    if (PRESENT(var)) then
      do n=1,nfields
-!       print *, 'fields(n)= ',trim(flds(n))
        if (trim(var)==trim(flds(n))) then
           m=n
           exit
        endif
      enddo
      if (m==0) then
-!        print *,'Error finding field ',trim(var)
         call abort()
      endif
 
@@ -777,14 +789,12 @@ end subroutine parse_segment_str
            fieldnam = extract_word(word1,'(',2)
            lword=len_trim(fieldnam)
            fieldnam = fieldnam(1:lword-1)  ! remove trailing parenth
-!           print *,'in parser, filename,fieldname= ',trim(filenam), ',',trim(fieldnam)
            value=-999.
         elseif (method(lword-4:lword) == 'value') then
            filenam = 'none'
            fieldnam = 'none'
            word1 = extract_word(word3,':',2)
            lword=len_trim(word1)
-!           print *,'word1= ',trim(word1)
            read(word1(1:lword),*) value
         endif
       endif
@@ -1617,18 +1627,129 @@ function lookup_seg_field(OBC_seg,field)
 
 end function lookup_seg_field
 
-subroutine update_OBC_segment_data(G, GV, OBC, h, eta, Time)
+
+subroutine fill_OBC_halos(G, GV, OBC, tv, h, tracer_Reg)
 
   type(ocean_grid_type),                     intent(in)    :: G !< Ocean grid structure
   type(verticalGrid_type),                   intent(in)    :: GV !<  Ocean vertical grid structure
   type(ocean_OBC_type),                      pointer       :: OBC !< Open boundary structure
-  real, dimension(SZI_(G),SZJ_(G), SZK_(G)), intent(in)    :: h !< Thickness
-  real, dimension(SZI_(G),SZJ_(G))         , intent(in)    :: eta !< Thickness
+  type(thermo_var_ptrs),                     intent(inout) :: tv !< Thermodynamics structure
+  real, dimension(SZI_(G),SZJ_(G), SZK_(G)), intent(inout)    :: h !< Thickness
+  type(tracer_registry_type),                pointer       :: tracer_Reg !< Tracer registry
+  ! Local variables
+
+  integer :: i, j, k, isd, ied, jsd, jed, is, ie, js, je
+  integer :: n, nz
+  character(len=40)  :: mod = "fill_OBC_halos" ! This subroutine's name.
+  type(OBC_segment_type), pointer :: segment
+  real, pointer, dimension(:,:,:) :: &
+    OBC_T_u => NULL(), &    ! These arrays should be allocated and set to
+    OBC_T_v => NULL(), &    ! specify the values of T and S that should come
+    OBC_S_u => NULL(), &
+    OBC_S_v => NULL()
+
+  is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = G%ke
+  isd = G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed
+  nz=G%ke
+
+  if (.not.associated(tv%T)) return
+
+  call pass_var(tv%T,G%Domain)
+  call pass_var(tv%S,G%Domain)
+
+  do n = 1, OBC%number_of_segments
+    segment => OBC%OBC_segment_number(n)
+
+    if (.not. segment%on_pe) cycle ! continue to next segment if not in computational domain
+
+    do j=jsd,jed ; do I=isd,ied-1
+      if (segment%direction == OBC_DIRECTION_E .and. OBC%OBC_segment_u(I,j) /= OBC_NONE ) then
+        do k=1,nz
+          tv%T(i+1,j,k) = tv%T(i,j,k) ; tv%S(i+1,j,k) = tv%S(i,j,k); h(i+1,j,k) = h(i,j,k)
+        enddo
+      endif
+    enddo ; enddo 
+
+    do j=jsd,jed ; do I=isd,ied
+      if (segment%direction == OBC_DIRECTION_W .and. OBC%OBC_segment_u(I,j) /= OBC_NONE ) then
+        do k=1,nz
+          tv%T(i-1,j,k) = tv%T(i,j,k) ; tv%S(i-1,j,k) = tv%S(i,j,k); h(i-1,j,k) = h(i,j,k)
+        enddo
+      endif
+    enddo ; enddo 
+
+    do j=jsd,jed-1 ; do I=isd,ied
+      if (segment%direction == OBC_DIRECTION_N .and. OBC%OBC_segment_v(I,j) /= OBC_NONE ) then
+        do k=1,nz
+          tv%T(i,j+1,k) = tv%T(i,j,k) ; tv%S(i,j+1,k) = tv%S(i,j,k); h(i,j+1,k) = h(i,j,k)
+        enddo
+      endif
+    enddo ; enddo 
+
+    do j=jsd,jed ; do I=isd,ied
+      if (segment%direction == OBC_DIRECTION_S .and. OBC%OBC_segment_v(I,j) /= OBC_NONE ) then
+        do k=1,nz
+          tv%T(i,j-1,k) = tv%T(i,j,k) ; tv%S(i,j-1,k) = tv%S(i,j,k); h(i,j-1,k) = h(i,j,k)
+        enddo
+      endif
+    enddo ; enddo 
+
+  enddo
+
+  if (associated(tv%T)) then
+     if (.not. associated(OBC_T_u)) then
+       allocate(OBC_T_u(G%IsdB:G%IedB,G%jsd:G%jed,nz)) ; OBC_T_u(:,:,:) = 0.0
+       allocate(OBC_S_u(G%IsdB:G%IedB,G%jsd:G%jed,nz)) ; OBC_S_u(:,:,:) = 0.0
+       allocate(OBC_T_v(G%Isd:G%Ied,G%jsdB:G%jedB,nz)) ; OBC_T_v(:,:,:) = 0.0
+       allocate(OBC_S_v(G%Isd:G%Ied,G%jsdB:G%jedB,nz)) ; OBC_S_v(:,:,:) = 0.0
+     endif
+     do k=1,nz ; do j=js,je ; do I=is-1,ie
+        if (OBC%OBC_segment_u(I,j) /= OBC_NONE) then
+          if (OBC%OBC_segment_number(OBC%OBC_segment_u(I,j))%direction == OBC_DIRECTION_E) then
+            OBC_T_u(I,j,k) = tv%T(i,j,k)
+            OBC_S_u(I,j,k) = tv%S(i,j,k)
+          elseif (OBC%OBC_segment_number(OBC%OBC_segment_u(I,j))%direction == OBC_DIRECTION_W) then
+            OBC_T_u(I,j,k) = tv%T(i+1,j,k)
+            OBC_S_u(I,j,k) = tv%S(i+1,j,k)
+          elseif (G%mask2dT(i,j) + G%mask2dT(i+1,j) > 0) then
+            OBC_T_u(I,j,k) = (G%mask2dT(i,j)*tv%T(i,j,k) + G%mask2dT(i+1,j)*tv%T(i+1,j,k)) / &
+                             (G%mask2dT(i,j) + G%mask2dT(i+1,j))
+            OBC_S_u(I,j,k) = (G%mask2dT(i,j)*tv%S(i,j,k) + G%mask2dT(i+1,j)*tv%S(i+1,j,k)) / &
+                             (G%mask2dT(i,j) + G%mask2dT(i+1,j))
+          else ! This probably shouldn't happen or maybe it doesn't matter?
+            OBC_T_u(I,j,k) = 0.5*(tv%T(i,j,k)+tv%T(i+1,j,k))
+            OBC_S_u(I,j,k) = 0.5*(tv%S(i,j,k)+tv%S(i+1,j,k))
+          endif
+        else
+          OBC_T_u(I,j,k) = 0.5*(tv%T(i,j,k)+tv%T(i+1,j,k))
+          OBC_S_u(I,j,k) = 0.5*(tv%S(i,j,k)+tv%S(i+1,j,k))
+        endif
+     enddo; enddo ; enddo
+
+    call pass_vector(OBC_T_u, OBC_T_v, G%Domain, To_All+SCALAR_PAIR, CGRID_NE)
+    call pass_vector(OBC_S_u, OBC_S_v, G%Domain, To_All+SCALAR_PAIR, CGRID_NE)
+   
+    call add_tracer_OBC_values("T",tracer_Reg, OBC_in_u=OBC_T_u,OBC_in_v=OBC_T_v)
+    call add_tracer_OBC_values("S",tracer_Reg, OBC_in_u=OBC_S_u,OBC_in_v=OBC_S_v)
+
+
+  endif       
+end subroutine fill_OBC_halos
+
+
+subroutine update_OBC_segment_data(G, GV, OBC, tv, h, eta, Time)
+
+  type(ocean_grid_type),                     intent(in)    :: G !< Ocean grid structure
+  type(verticalGrid_type),                   intent(in)    :: GV !<  Ocean vertical grid structure
+  type(ocean_OBC_type),                      pointer       :: OBC !< Open boundary structure
+  type(thermo_var_ptrs),                     intent(inout) :: tv !< Thermodynamics structure
+  real, dimension(SZI_(G),SZJ_(G), SZK_(G)), intent(inout)    :: h !< Thickness
+  real, dimension(SZI_(G),SZJ_(G))         , intent(inout)    :: eta !< Thickness
   type(time_type),                           intent(in)    :: Time
   ! Local variables
 
   integer :: i, j, k, is, ie, js, je, isd, ied, jsd, jed
-  integer :: IsdB, IedB, JsdB, JedB, n, m
+  integer :: IsdB, IedB, JsdB, JedB, n, m, nz
   character(len=40)  :: mod = "set_OBC_segment_data" ! This subroutine's name.
   character(len=200) :: filename, OBC_file, inputdir ! Strings for file/path
   type(OBC_segment_type), pointer :: segment
@@ -1644,6 +1765,9 @@ subroutine update_OBC_segment_data(G, GV, OBC, h, eta, Time)
   is = G%iscB ; ie = G%iecB ; js = G%jscB ; je = G%jecB
   isd = G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed
   IsdB = G%IsdB ; IedB = G%IedB ; JsdB = G%JsdB ; JedB = G%JedB
+  nz=G%ke
+
+
 
   do n = 1, OBC%number_of_segments
     segment => OBC%OBC_segment_number(n)
@@ -1662,6 +1786,27 @@ subroutine update_OBC_segment_data(G, GV, OBC, h, eta, Time)
       allocate(segment%unbt(ni_seg,nj_seg));segment%unbt(:,:)=0.0
       allocate(segment%eta(ni_seg,nj_seg));segment%eta(:,:)=0.0
     endif
+
+!    do j=jsd,jed ; do I=isd,ied-1
+!      if (segment%direction == OBC_DIRECTION_E .and. OBC%OBC_segment_u(I,j) /= OBC_NONE ) then
+!        do k=1,nz
+!          tv%T(i+1,j,k) = tv%T(i,j,k) ; tv%S(i+1,j,k) = tv%S(i,j,k); h(i+1,j,k) = h(i,j,k)
+!        enddo
+!      else if (segment%direction == OBC_DIRECTION_W .and. OBC%OBC_segment_u(I,j) /= OBC_NONE ) then
+!        tv%T(i,j,k) = tv%T(i+1,j,k) ; tv%S(i,j,k) = tv%S(i+1,j,k); h(i,j,k) = h(i+1,j,k)
+!      endif
+!    enddo ; enddo 
+
+!    do j=jsd,jed-1 ; do I=isd,ied-1
+!      if (segment%direction == OBC_DIRECTION_N .and. OBC%OBC_segment_v(I,j) /= OBC_NONE ) then
+!        do k=1,nz
+!          tv%T(i,j+1,k) = tv%T(i,j,k) ; tv%S(i,j+1,k) = tv%S(i,j,k); h(i,j+1,k) = h(i,j,k)
+!        enddo
+!      else if (segment%direction == OBC_DIRECTION_S .and. OBC%OBC_segment_v(I,j) /= OBC_NONE ) then
+!        tv%T(i,j,k) = tv%T(i,j+1,k) ; tv%S(i,j,k) = tv%S(i,j+1,k); h(i,j,k) = h(i,j+1,k)
+!      endif
+!    enddo ; enddo 
+
 
      ! calculate auxiliary fields at staggered locations
     ishift=0;jshift=0
@@ -1785,8 +1930,7 @@ subroutine update_OBC_segment_data(G, GV, OBC, h, eta, Time)
       endif
     enddo
 
-!    if (segment%direction == OBC_DIRECTION_S) &
-!      print *,'U-normal at southern OBC (i=5,j=4)= ', segment%unbt(1,1)
+
   enddo ! end segment loop
 
 end subroutine update_OBC_segment_data
