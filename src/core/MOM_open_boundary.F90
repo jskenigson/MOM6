@@ -258,8 +258,8 @@ subroutine open_boundary_config(G, param_file, OBC)
 end subroutine open_boundary_config
 
 subroutine initialize_segment_data(OBC, PF)
-  type(ocean_OBC_type), intent(inout) :: OBC
-  type(param_file_type), intent(in)   :: PF
+  type(ocean_OBC_type), intent(inout) :: OBC !< Open boundary control structure
+  type(param_file_type), intent(in)   :: PF  !< Parameter file handle
 
   integer :: num_segs,n,m,num_fields
   character(len=256) :: segstr, filename
@@ -394,11 +394,12 @@ subroutine setup_u_point_obc(OBC, G, segment_str, l_seg)
   if (Je_obc<Js_obc) then
     OBC%OBC_segment_number(l_seg)%direction = OBC_DIRECTION_W
     j=Js_obc;Js_obc=Je_obc;Je_obc=j
-    I_obc = I_obc-1
   else
     OBC%OBC_segment_number(l_seg)%direction = OBC_DIRECTION_E
   endif
 
+  ! This skips adding the segment extentions to the global_indices - have to
+  ! fix it below.
   OBC%OBC_segment_number(l_seg)%global_indices = (/I_obc,I_obc,Js_obc,Je_obc/)
 
   I_obc = I_obc - G%idg_offset ! Convert to local tile indices on this tile
@@ -409,12 +410,8 @@ subroutine setup_u_point_obc(OBC, G, segment_str, l_seg)
 
   OBC%OBC_segment_number(l_seg)%on_pe = .false.
 
-!   Hack to extend segment by one point
-!  if (Js_obc<Je_obc) then
-!    Js_obc = Js_obc - 1 ; Je_obc = Je_obc + 1
-!  else
-!    Js_obc = Js_obc + 1 ; Je_obc = Je_obc - 1
-!  endif
+  ! Hack to extend segment by one point
+  Js_obc = Js_obc - 1 ; Je_obc = Je_obc + 1
 
   do a_loop = 1,5 ! up to 5 options available
     if (len_trim(action_str(a_loop)) == 0) then
@@ -455,11 +452,11 @@ subroutine setup_u_point_obc(OBC, G, segment_str, l_seg)
       OBC%update_OBC = .true.
       OBC%specified_u_BCs_exist_globally = .true. ! This avoids deallocation
       ! Hack to undo the hack above for SIMPLE BCs
-!      if (Js_obc<Je_obc) then
-!        Js_obc = Js_obc + 1 ; Je_obc = Je_obc - 1
-!      else
-!        Js_obc = Js_obc - 1 ; Je_obc = Je_obc + 1
-!      endif
+      if (Js_obc<Je_obc) then
+        Js_obc = Js_obc + 1 ; Je_obc = Je_obc - 1
+      else
+        Js_obc = Js_obc - 1 ; Je_obc = Je_obc + 1
+      endif
     else
       call MOM_error(FATAL, "MOM_open_boundary.F90, setup_u_point_obc: "//&
                      "String '"//trim(action_str(a_loop))//"' not understood.")
@@ -480,10 +477,13 @@ subroutine setup_u_point_obc(OBC, G, segment_str, l_seg)
     OBC%OBC_segment_number(l_seg)%on_pe = .true.
 
     do j=G%HI%jsd, G%HI%jed
-      if (j>=Js_obc-1 .and. j<=Je_obc+1) then ! include corners
+      if (j>=Js_obc .and. j<=Je_obc) then ! include corners
+!      if (j>=Js_obc-1 .and. j<=Je_obc+1) then ! include corners
 
         OBC%OBC_segment_u(I_obc,j) = l_seg
 
+!! This turns off OBCs on tangential velocities - not sure it makes a difference
+!! now.
 !        if (Je_obc>Js_obc) then ! East is outward
 !          if (this_kind == OBC_FLATHER) then
 !            ! Set v points outside segment
@@ -509,6 +509,11 @@ subroutine setup_u_point_obc(OBC, G, segment_str, l_seg)
     enddo
   enddo ! a_loop
 
+  ! Extend the segment's global_indices if needed.
+  if (.not. OBC%OBC_segment_number(l_seg)%specified) then
+    OBC%OBC_segment_number(l_seg)%global_indices = OBC%OBC_segment_number(l_seg)%global_indices &
+          + (/ 0, 0, -1, 1 /)
+  endif
   OBC%OBC_segment_number(l_seg)%Is_obc = I_obc
   OBC%OBC_segment_number(l_seg)%Ie_obc = I_obc
   OBC%OBC_segment_number(l_seg)%Js_obc = Js_obc
@@ -534,9 +539,10 @@ subroutine setup_v_point_obc(OBC, G, segment_str, l_seg)
     i=Is_obc;Is_obc=Ie_obc;Ie_obc=i
   else
     OBC%OBC_segment_number(l_seg)%direction = OBC_DIRECTION_S
-    J_obc=J_obc-1
   endif
 
+  ! This skips adding the segment extentions to the global_indices - have to
+  ! fix it below.
   OBC%OBC_segment_number(l_seg)%global_indices = (/Is_obc,Ie_obc,J_obc,J_obc/)
 
   J_obc = J_obc - G%jdg_offset ! Convert to local tile indices on this tile
@@ -545,11 +551,7 @@ subroutine setup_v_point_obc(OBC, G, segment_str, l_seg)
   this_kind = OBC_NONE
 
   ! Hack to extend segment by one point
-!  if (Is_obc<Ie_obc) then
-!    Is_obc = Is_obc - 1 ; Ie_obc = Ie_obc + 1
-!  else
-!    Is_obc = Is_obc + 1 ; Ie_obc = Ie_obc - 1
-!  endif
+  Is_obc = Is_obc - 1 ; Ie_obc = Ie_obc + 1
 
   OBC%OBC_segment_number(l_seg)%on_pe = .false.
 
@@ -592,11 +594,11 @@ subroutine setup_v_point_obc(OBC, G, segment_str, l_seg)
       OBC%update_OBC = .true.
       OBC%specified_v_BCs_exist_globally = .true. ! This avoids deallocation
       ! Hack to undo the hack above for SIMPLE BCs
-!      if (Is_obc<Ie_obc) then
-!        Is_obc = Is_obc + 1 ; Ie_obc = Ie_obc - 1
-!      else
-!        Is_obc = Is_obc - 1 ; Ie_obc = Ie_obc + 1
-!      endif
+      if (Is_obc<Ie_obc) then
+        Is_obc = Is_obc + 1 ; Ie_obc = Ie_obc - 1
+      else
+        Is_obc = Is_obc - 1 ; Ie_obc = Ie_obc + 1
+      endif
     else
       call MOM_error(FATAL, "MOM_open_boundary.F90, setup_v_point_obc: "//&
                      "String '"//trim(action_str(a_loop))//"' not understood.")
@@ -618,7 +620,8 @@ subroutine setup_v_point_obc(OBC, G, segment_str, l_seg)
     OBC%OBC_segment_number(l_seg)%on_pe = .true.
 
     do i=G%HI%isd, G%HI%ied
-      if (i>=Is_obc-1 .and. i<=Ie_obc+1) then ! include corners
+!!!      if (i>=Is_obc-1 .and. i<=Ie_obc+1) then ! include corners
+      if (i>=Is_obc .and. i<=Ie_obc) then ! include corners
         OBC%OBC_segment_v(i,J_obc) = l_seg
 
  !       if (Is_obc>Ie_obc) then ! North is outward
@@ -646,6 +649,11 @@ subroutine setup_v_point_obc(OBC, G, segment_str, l_seg)
     enddo
   enddo ! a_loop
 
+  ! Extend the segment's global_indices if needed.
+  if (.not. OBC%OBC_segment_number(l_seg)%specified) then
+    OBC%OBC_segment_number(l_seg)%global_indices = OBC%OBC_segment_number(l_seg)%global_indices &
+          + (/ -1, 1, 0, 0 /)
+  endif
   OBC%OBC_segment_number(l_seg)%Is_obc = Is_obc
   OBC%OBC_segment_number(l_seg)%Ie_obc = Ie_obc
   OBC%OBC_segment_number(l_seg)%Js_obc = J_obc
@@ -914,12 +922,11 @@ subroutine open_boundary_impose_normal_slope(OBC, G, depth)
   ! Local variables
   integer :: i, j
   logical :: bc_north, bc_south, bc_east, bc_west
-  real, dimension(:,:), allocatable :: depth_new
 
   if (.not.associated(OBC)) return
 
-  allocate(depth_new(G%isd:G%ied,G%jsd:G%jed)); depth_new = depth
-
+  ! Was: do J=G%jsd+1,G%jed-1 ; do i=G%isd+1,G%ied-1
+  ! Trouble for wide halos?
   do J=G%jsc,G%jec ; do i=G%isc,G%iec
     bc_north = .false. ; bc_south = .false. ; bc_east = .false. ; bc_west = .false.
     if (associated(OBC%OBC_segment_u)) then
@@ -934,30 +941,17 @@ subroutine open_boundary_impose_normal_slope(OBC, G, depth)
       if (OBC%OBC_segment_number(OBC%OBC_segment_v(i,J-1))%direction == OBC_DIRECTION_S &
           .and. .not. OBC%OBC_segment_number(OBC%OBC_segment_v(i,J-1))%specified) bc_south = .true.
     endif
-    if (bc_north) then
-      depth_new(i,j+1) = depth(i,j)
-    endif
-
-    if (bc_south) then
-       depth_new(i,j-1) = depth(i,j)
-    endif
-
-    if (bc_east) then
-       depth_new(i+1,j) = depth(i,j)
-    endif
-
-    if (bc_west) then
-       depth_new(i-1,j) = depth(i,j)
-    endif
+    if (bc_north) depth(i,j+1) = depth(i,j)
+    if (bc_south) depth(i,j-1) = depth(i,j)
+    if (bc_east) depth(i+1,j) = depth(i,j)
+    if (bc_west) depth(i-1,j) = depth(i,j)
 
     ! Convex corner cases
-    if (bc_north.and.bc_east) depth_new(i+1,j+1) = depth(i,j)
-    if (bc_north.and.bc_west) depth_new(i-1,j+1) = depth(i,j)
-    if (bc_south.and.bc_east) depth_new(i+1,j-1) = depth(i,j)
-    if (bc_south.and.bc_west) depth_new(i-1,j-1) = depth(i,j)
+    if (bc_north.and.bc_east) depth(i+1,j+1) = depth(i,j)
+    if (bc_north.and.bc_west) depth(i-1,j+1) = depth(i,j)
+    if (bc_south.and.bc_east) depth(i+1,j-1) = depth(i,j)
+    if (bc_south.and.bc_west) depth(i-1,j-1) = depth(i,j)
   enddo ; enddo
-
-  depth=depth_new
 
 end subroutine open_boundary_impose_normal_slope
 
@@ -1690,7 +1684,7 @@ subroutine fill_OBC_halos(G, GV, OBC, tv, h, tracer_Reg)
           tv%T(i+1,j,k) = tv%T(i,j,k) ; tv%S(i+1,j,k) = tv%S(i,j,k); h(i+1,j,k) = h(i,j,k)
         enddo
       endif
-    enddo ; enddo 
+    enddo ; enddo
 
     do j=jsd,jed ; do I=isd,ied
       if (segment%direction == OBC_DIRECTION_W .and. OBC%OBC_segment_u(I,j) /= OBC_NONE ) then
@@ -1698,7 +1692,7 @@ subroutine fill_OBC_halos(G, GV, OBC, tv, h, tracer_Reg)
           tv%T(i-1,j,k) = tv%T(i,j,k) ; tv%S(i-1,j,k) = tv%S(i,j,k); h(i-1,j,k) = h(i,j,k)
         enddo
       endif
-    enddo ; enddo 
+    enddo ; enddo
 
     do j=jsd,jed-1 ; do I=isd,ied
       if (segment%direction == OBC_DIRECTION_N .and. OBC%OBC_segment_v(I,j) /= OBC_NONE ) then
@@ -1706,7 +1700,7 @@ subroutine fill_OBC_halos(G, GV, OBC, tv, h, tracer_Reg)
           tv%T(i,j+1,k) = tv%T(i,j,k) ; tv%S(i,j+1,k) = tv%S(i,j,k); h(i,j+1,k) = h(i,j,k)
         enddo
       endif
-    enddo ; enddo 
+    enddo ; enddo
 
     do j=jsd,jed ; do I=isd,ied
       if (segment%direction == OBC_DIRECTION_S .and. OBC%OBC_segment_v(I,j) /= OBC_NONE ) then
@@ -1714,7 +1708,7 @@ subroutine fill_OBC_halos(G, GV, OBC, tv, h, tracer_Reg)
           tv%T(i,j-1,k) = tv%T(i,j,k) ; tv%S(i,j-1,k) = tv%S(i,j,k); h(i,j-1,k) = h(i,j,k)
         enddo
       endif
-    enddo ; enddo 
+    enddo ; enddo
 
   enddo
 
@@ -1750,12 +1744,12 @@ subroutine fill_OBC_halos(G, GV, OBC, tv, h, tracer_Reg)
 
     call pass_vector(OBC_T_u, OBC_T_v, G%Domain, To_All+SCALAR_PAIR, CGRID_NE)
     call pass_vector(OBC_S_u, OBC_S_v, G%Domain, To_All+SCALAR_PAIR, CGRID_NE)
-   
+
     call add_tracer_OBC_values("T",tracer_Reg, OBC_in_u=OBC_T_u,OBC_in_v=OBC_T_v)
     call add_tracer_OBC_values("S",tracer_Reg, OBC_in_u=OBC_S_u,OBC_in_v=OBC_S_v)
 
 
-  endif       
+  endif
 end subroutine fill_OBC_halos
 
 
@@ -1777,9 +1771,10 @@ subroutine update_OBC_segment_data(G, GV, OBC, tv, h, eta, Time)
   type(OBC_segment_type), pointer :: segment
   integer, dimension(4) :: siz,siz2
   real :: sumh ! column sum of thicknesses (m)
-  integer :: ni_seg, nj_seg  ! number of src gridpoints along the segments
-  integer :: i2, j2          ! indices for referencing local domain array
-  integer :: ishift, jshift  ! offsets for staggered locations
+  integer :: ni_seg, nj_seg   ! number of src gridpoints along the segments
+  integer :: i2, j2           ! indices for referencing local domain array
+  integer :: ishift, jshift   ! offsets for staggered locations
+  integer :: ishift2, jshift2 ! offsets for staggered locations
   real, dimension(:,:), pointer :: seg_vel => NULL()  ! pointer to segment velocity array
   real, dimension(:,:), pointer :: seg_trans => NULL()  ! pointer to segment transport array
   real, dimension(:,:,:), allocatable :: tmp_buffer
@@ -1796,8 +1791,10 @@ subroutine update_OBC_segment_data(G, GV, OBC, tv, h, eta, Time)
 
     if (.not. segment%on_pe) cycle ! continue to next segment if not in computational domain
 
-    ni_seg = segment%Ie_obc-segment%Is_obc+1
-    nj_seg = segment%Je_obc-segment%Js_obc+1
+    ! Segment indices are on q points - segments are one wide and long enough
+    ! for all the internal velocity points.
+    ni_seg = max(1, segment%Ie_obc-segment%Is_obc)
+    nj_seg = max(1, segment%Je_obc-segment%Js_obc)
 
     if (.not. ASSOCIATED(segment%Cg)) then ! finishing allocating storage for segments
       allocate(segment%Cg(ni_seg,nj_seg));segment%Cg(:,:)=0.0
@@ -1817,7 +1814,7 @@ subroutine update_OBC_segment_data(G, GV, OBC, tv, h, eta, Time)
 !      else if (segment%direction == OBC_DIRECTION_W .and. OBC%OBC_segment_u(I,j) /= OBC_NONE ) then
 !        tv%T(i,j,k) = tv%T(i+1,j,k) ; tv%S(i,j,k) = tv%S(i+1,j,k); h(i,j,k) = h(i+1,j,k)
 !      endif
-!    enddo ; enddo 
+!    enddo ; enddo
 
 !    do j=jsd,jed-1 ; do I=isd,ied-1
 !      if (segment%direction == OBC_DIRECTION_N .and. OBC%OBC_segment_v(I,j) /= OBC_NONE ) then
@@ -1827,21 +1824,29 @@ subroutine update_OBC_segment_data(G, GV, OBC, tv, h, eta, Time)
 !      else if (segment%direction == OBC_DIRECTION_S .and. OBC%OBC_segment_v(I,j) /= OBC_NONE ) then
 !        tv%T(i,j,k) = tv%T(i,j+1,k) ; tv%S(i,j,k) = tv%S(i,j+1,k); h(i,j,k) = h(i,j+1,k)
 !      endif
-!    enddo ; enddo 
+!    enddo ; enddo
 
 
-     ! calculate auxiliary fields at staggered locations
-    ishift=0;jshift=0
-    if (segment%direction == OBC_DIRECTION_W) ishift=-1
-    if (segment%direction == OBC_DIRECTION_E) ishift=1
-    if (segment%direction == OBC_DIRECTION_S) jshift=-1
-    if (segment%direction == OBC_DIRECTION_N) jshift=1
+    ! Calculate auxiliary fields at staggered locations.
+    ! Segment indices are on q points:
+    !
+    !       |-----------|------------|-----------|-----------|  J_obc
+    !     Is_obc                                          Ie_obc
+    !
+    ! i2 has to start at Is_obc+1 and end at Ie_obc.
+    ! j2 is J_obc and jshift has to be +1 at both the north and south.
+    !
+    ishift = 0; jshift = 0; ishift2 = 0; jshift2 = 0
+    if (segment%direction == OBC_DIRECTION_W) ishift = 1; jshift2 = 1
+    if (segment%direction == OBC_DIRECTION_E) ishift = 1; jshift2 = 1
+    if (segment%direction == OBC_DIRECTION_S) jshift = 1; ishift2 = 1
+    if (segment%direction == OBC_DIRECTION_N) jshift = 1; ishift2 = 1
 
     do j=1,nj_seg
       do i=1,ni_seg
-        i2 =  segment%Is_obc + i - 1
-        j2 =  segment%Js_obc + j - 1
-        if ((i2 .gt. ie .or. i2 .lt. is) .or. (j2 .gt. je .or. j2 .lt. js)) cycle
+        i2 =  segment%Is_obc + i - 1 + ishift2
+        j2 =  segment%Js_obc + j - 1 + jshift2
+        if ((i2 .gt. ied .or. i2 .lt. isd) .or. (j2 .gt. jed .or. j2 .lt. jsd)) cycle
 !        if (OBC%OBC_segment_u(i2,j2) /= n) cycle
         segment%Cg(i,j) = sqrt(GV%g_prime(1)*(0.5*(G%bathyT(i2,j2) + G%bathyT(i2+ishift,j2+jshift))))
         if (GV%Boussinesq) then

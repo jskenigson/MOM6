@@ -186,7 +186,7 @@ subroutine step_MOM_dyn_unsplit(u, v, h, tv, visc, Time_local, dt, fluxes, &
   real, dimension(SZIB_(G),SZJ_(G),SZK_(G)), intent(inout) :: u
   real, dimension(SZI_(G),SZJB_(G),SZK_(G)), intent(inout) :: v
   real, dimension(SZI_(G),SZJ_(G),SZK_(G)),  intent(inout) :: h
-  type(thermo_var_ptrs),                     intent(inout)    :: tv
+  type(thermo_var_ptrs),                     intent(inout) :: tv
   type(vertvisc_type),                       intent(inout) :: visc
   type(time_type),                           intent(in)    :: Time_local
   real,                                      intent(in)    :: dt

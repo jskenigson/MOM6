@@ -654,7 +654,7 @@ subroutine step_MOM(fluxes, state, Time_start, time_interval, CS)
     call cpu_clock_end(id_clock_other)
 
     call fill_OBC_halos(CS%G, CS%GV, CS%OBC, CS%tv, CS%h,CS%tracer_reg)
- 
+
     if (CS%diabatic_first .and. (CS%dt_trans==0.0)) then ! do thermodynamics.
 
       if (thermo_does_span_coupling) then

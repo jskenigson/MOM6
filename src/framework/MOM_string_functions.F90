@@ -258,8 +258,8 @@ character(len=120) function extract_word(string, separators, n, debug)
         e = i-1 ! Previous character is end of word
         nw = nw+1
         if (nw==n) then
-           if (dbg) print *, 'nw,n= ',nw,n,' b,e= ',b,e,' result= ',trim(string(b:e))
-           extract_word = trim(string(b:e))
+          if (dbg) print *, 'nw,n= ',nw,n,' b,e= ',b,e,' result= ',trim(string(b:e))
+          extract_word = trim(string(b:e))
           return
         endif
       endif

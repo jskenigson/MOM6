@@ -1662,7 +1662,8 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, &
 
     if (find_etaav) then
 !GOMP do
-      do j=js-1,je+1 ; do i=is-1,ie+1
+!!!      do j=js-1,je+1 ; do i=is-1,ie+1
+      do j=js,je ; do i=is,ie
         eta_sum(i,j) = eta_sum(i,j) + wt_accel2(n) * eta_PF_BT(i,j)
       enddo ; enddo
     endif
@@ -2029,9 +2030,11 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, &
   I_sum_wt_vel = 1.0 / sum_wt_vel ; I_sum_wt_eta = 1.0 / sum_wt_eta
   I_sum_wt_accel = 1.0 / sum_wt_accel ; I_sum_wt_trans = 1.0 / sum_wt_trans
 
-  if (find_etaav) then ; do j=js-1,je+1 ; do i=is-1,ie+1
+!!!  if (find_etaav) then ; do j=js-1,je+1 ; do i=is-1,ie+1
+  if (find_etaav) then ; do j=js,je ; do i=is,ie
     etaav(i,j) = eta_sum(i,j) * I_sum_wt_accel
   enddo ; enddo ; endif
+  do j=js-1,je+1 ; do i=is-1,ie+1 ; e_anom(i,j) = 0.0 ; enddo ; enddo
   do j=js-1,je+1 ; do i=is-1,ie+1 ; e_anom(i,j) = 0.0 ; enddo ; enddo
   if (interp_eta_PF) then
     do j=js,je ; do i=is,ie
