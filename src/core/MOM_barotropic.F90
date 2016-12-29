@@ -2941,8 +2941,8 @@ subroutine initialize_BT_OBC(G,GV,MS,OBC, eta, BT_OBC, use_BT_cont, Datu, Datv, 
       do i=segment%is_obc,segment%ie_obc
         i2 = i-segment%Is_obc + 1
         j2 = j-segment%Js_obc + 1
-        if (i.lt.G%IscB.or.i.gt.G%iecb) cycle
-        if (j.lt.G%JscB.or.j.gt.G%jecb) cycle
+        if (i.lt.isdw.or.i.gt.iedw) cycle
+        if (j.lt.jsdw.or.j.gt.jedw) cycle
         if (segment%direction == OBC_DIRECTION_E .and. OBC%OBC_segment_u(i,j) == n) then
           if (OBC%OBC_segment_number(OBC%OBC_segment_u(I,j))%specified) then
             BT_OBC%uhbt(i,j) = segment%unhbt(i2,j2)

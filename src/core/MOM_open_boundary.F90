@@ -1774,7 +1774,6 @@ subroutine update_OBC_segment_data(G, GV, OBC, tv, h, eta, Time)
   integer :: ni_seg, nj_seg   ! number of src gridpoints along the segments
   integer :: i2, j2           ! indices for referencing local domain array
   integer :: ishift, jshift   ! offsets for staggered locations
-  integer :: ishift2, jshift2 ! offsets for staggered locations
   real, dimension(:,:), pointer :: seg_vel => NULL()  ! pointer to segment velocity array
   real, dimension(:,:), pointer :: seg_trans => NULL()  ! pointer to segment transport array
   real, dimension(:,:,:), allocatable :: tmp_buffer
@@ -1792,18 +1791,19 @@ subroutine update_OBC_segment_data(G, GV, OBC, tv, h, eta, Time)
     if (.not. segment%on_pe) cycle ! continue to next segment if not in computational domain
 
     ! Segment indices are on q points - segments are one wide and long enough
-    ! for all the internal velocity points.
-    ni_seg = max(1, segment%Ie_obc-segment%Is_obc)
-    nj_seg = max(1, segment%Je_obc-segment%Js_obc)
+    ! for all the internal velocity points. This give something that's actually
+    ! one too long in the long direction.
+    ni_seg = segment%Ie_obc-segment%Is_obc + 1
+    nj_seg = segment%Je_obc-segment%Js_obc + 1
 
     if (.not. ASSOCIATED(segment%Cg)) then ! finishing allocating storage for segments
-      allocate(segment%Cg(ni_seg,nj_seg));segment%Cg(:,:)=0.0
-      allocate(segment%Htot(ni_seg,nj_seg));segment%Htot(:,:)=0.0
-      allocate(segment%h(ni_seg,nj_seg,G%ke));segment%h(:,:,:)=0.0
-      allocate(segment%unh(ni_seg,nj_seg,G%ke));segment%unh(:,:,:)=0.0
-      allocate(segment%unhbt(ni_seg,nj_seg));segment%unhbt(:,:)=0.0
-      allocate(segment%unbt(ni_seg,nj_seg));segment%unbt(:,:)=0.0
-      allocate(segment%eta(ni_seg,nj_seg));segment%eta(:,:)=0.0
+      allocate(segment%Cg(ni_seg,nj_seg));       segment%Cg(:,:) = 0.0
+      allocate(segment%Htot(ni_seg,nj_seg));     segment%Htot(:,:) = 0.0
+      allocate(segment%h(ni_seg,nj_seg,G%ke));   segment%h(:,:,:) = 0.0
+      allocate(segment%unh(ni_seg,nj_seg,G%ke)); segment%unh(:,:,:) = 0.0
+      allocate(segment%unhbt(ni_seg,nj_seg));    segment%unhbt(:,:) = 0.0
+      allocate(segment%unbt(ni_seg,nj_seg));     segment%unbt(:,:) = 0.0
+      allocate(segment%eta(ni_seg,nj_seg));      segment%eta(:,:) = 0.0
     endif
 
 !    do j=jsd,jed ; do I=isd,ied-1
@@ -1836,16 +1836,16 @@ subroutine update_OBC_segment_data(G, GV, OBC, tv, h, eta, Time)
     ! i2 has to start at Is_obc+1 and end at Ie_obc.
     ! j2 is J_obc and jshift has to be +1 at both the north and south.
     !
-    ishift = 0; jshift = 0; ishift2 = 0; jshift2 = 0
-    if (segment%direction == OBC_DIRECTION_W) ishift = 1; jshift2 = 1
-    if (segment%direction == OBC_DIRECTION_E) ishift = 1; jshift2 = 1
-    if (segment%direction == OBC_DIRECTION_S) jshift = 1; ishift2 = 1
-    if (segment%direction == OBC_DIRECTION_N) jshift = 1; ishift2 = 1
+    ishift = 0; jshift = 0
+    if (segment%direction == OBC_DIRECTION_W .or. segment%direction == OBC_DIRECTION_E) &
+        ishift = 1
+    if (segment%direction == OBC_DIRECTION_S .or. segment%direction == OBC_DIRECTION_N) &
+        jshift = 1
 
     do j=1,nj_seg
       do i=1,ni_seg
-        i2 =  segment%Is_obc + i - 1 + ishift2
-        j2 =  segment%Js_obc + j - 1 + jshift2
+        i2 =  segment%Is_obc + i - 1
+        j2 =  segment%Js_obc + j - 1
         if ((i2 .gt. ied .or. i2 .lt. isd) .or. (j2 .gt. jed .or. j2 .lt. jsd)) cycle
 !        if (OBC%OBC_segment_u(i2,j2) /= n) cycle
         segment%Cg(i,j) = sqrt(GV%g_prime(1)*(0.5*(G%bathyT(i2,j2) + G%bathyT(i2+ishift,j2+jshift))))
