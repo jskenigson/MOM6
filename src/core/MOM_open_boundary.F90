@@ -925,9 +925,7 @@ subroutine open_boundary_impose_normal_slope(OBC, G, depth)
 
   if (.not.associated(OBC)) return
 
-  ! Was: do J=G%jsd+1,G%jed-1 ; do i=G%isd+1,G%ied-1
-  ! Trouble for wide halos?
-  do J=G%jsc,G%jec ; do i=G%isc,G%iec
+  do J=G%jsd+1,G%jed-1 ; do i=G%isd+1,G%ied-1
     bc_north = .false. ; bc_south = .false. ; bc_east = .false. ; bc_west = .false.
     if (associated(OBC%OBC_segment_u)) then
       if (OBC%OBC_segment_number(OBC%OBC_segment_u(I,j))%direction == OBC_DIRECTION_E &

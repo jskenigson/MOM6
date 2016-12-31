@@ -2035,7 +2035,6 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, &
     etaav(i,j) = eta_sum(i,j) * I_sum_wt_accel
   enddo ; enddo ; endif
   do j=js-1,je+1 ; do i=is-1,ie+1 ; e_anom(i,j) = 0.0 ; enddo ; enddo
-  do j=js-1,je+1 ; do i=is-1,ie+1 ; e_anom(i,j) = 0.0 ; enddo ; enddo
   if (interp_eta_PF) then
     do j=js,je ; do i=is,ie
       e_anom(i,j) = dgeo_de * (0.5 * (eta(i,j) + eta_in(i,j)) - &
@@ -3140,6 +3139,7 @@ subroutine destroy_BT_OBC(BT_OBC)
   deallocate(BT_OBC%eta_outer_v)
 end subroutine destroy_BT_OBC
 
+
 subroutine btcalc(h, G, GV, CS, h_u, h_v, may_use_default)
   type(ocean_grid_type),                  intent(inout) :: G
   type(verticalGrid_type),                intent(in)    :: GV
@@ -3578,6 +3578,7 @@ function vhbt_to_vbt(vhbt, BTC, guess) result(vbt)
 
 end function vhbt_to_vbt
 
+
 subroutine set_local_BT_cont_types(BT_cont, BTCL_u, BTCL_v, G, MS, BT_Domain, halo)
   type(BT_cont_type),                                    intent(inout) :: BT_cont
   type(memory_size_type),                                intent(in)    :: MS
@@ -3705,6 +3706,7 @@ subroutine set_local_BT_cont_types(BT_cont, BTCL_u, BTCL_v, G, MS, BT_Domain, ha
 !$OMP end parallel
 end subroutine set_local_BT_cont_types
 
+
 subroutine adjust_local_BT_cont_types(ubt, uhbt, vbt, vhbt, BTCL_u, BTCL_v, &
                                       G, MS, BT_Domain, halo)
   type(memory_size_type),                                intent(in)    :: MS
@@ -3807,6 +3809,7 @@ subroutine adjust_local_BT_cont_types(ubt, uhbt, vbt, vhbt, BTCL_u, BTCL_v, &
   enddo ; enddo
 !$OMP end parallel
 end subroutine adjust_local_BT_cont_types
+
 
 subroutine BT_cont_to_face_areas(BT_cont, Datu, Datv, G, MS, halo, maximize)
   type(BT_cont_type),                         intent(inout) :: BT_cont
