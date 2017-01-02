@@ -898,7 +898,7 @@ subroutine open_boundary_impose_normal_slope(OBC, G, depth)
 
   allocate(depth_new(G%isd:G%ied,G%jsd:G%jed)); depth_new = depth
 
-  do J=G%jsc,G%jec ; do i=G%isc,G%iec
+  do J=G%jsdB+1,G%jedB-1 ; do i=G%isdB+1,G%iedB-1
     bc_north = .false. ; bc_south = .false. ; bc_east = .false. ; bc_west = .false.
     if (associated(OBC%OBC_segment_u)) then
       if (OBC%OBC_segment_number(OBC%OBC_segment_u(I,j))%direction == OBC_DIRECTION_E &
@@ -1662,7 +1662,7 @@ subroutine fill_OBC_halos(G, GV, OBC, tv, h, tracer_Reg)
 
     if (.not. segment%on_pe) cycle ! continue to next segment if not in computational domain
 
-    do j=jsd,jed ; do I=isd,ied-1
+    do j=G%jsdB+1,G%jedB ; do I=G%isdB,G%iedB-1
       if (segment%direction == OBC_DIRECTION_E .and. OBC%OBC_segment_u(I,j) /= OBC_NONE ) then
         do k=1,nz
           tv%T(i+1,j,k) = tv%T(i,j,k) ; tv%S(i+1,j,k) = tv%S(i,j,k); h(i+1,j,k) = h(i,j,k)
@@ -1670,7 +1670,7 @@ subroutine fill_OBC_halos(G, GV, OBC, tv, h, tracer_Reg)
       endif
     enddo ; enddo 
 
-    do j=jsd,jed ; do I=isd,ied
+    do j=G%jsdB+1,G%jedB ; do I=G%isdB+1,G%iedB
       if (segment%direction == OBC_DIRECTION_W .and. OBC%OBC_segment_u(I,j) /= OBC_NONE ) then
         do k=1,nz
           tv%T(i-1,j,k) = tv%T(i,j,k) ; tv%S(i-1,j,k) = tv%S(i,j,k); h(i-1,j,k) = h(i,j,k)
@@ -1678,7 +1678,7 @@ subroutine fill_OBC_halos(G, GV, OBC, tv, h, tracer_Reg)
       endif
     enddo ; enddo 
 
-    do j=jsd,jed-1 ; do I=isd,ied
+    do j=G%jsdB,G%jedB-1 ; do I=G%isdB+1,G%iedB
       if (segment%direction == OBC_DIRECTION_N .and. OBC%OBC_segment_v(I,j) /= OBC_NONE ) then
         do k=1,nz
           tv%T(i,j+1,k) = tv%T(i,j,k) ; tv%S(i,j+1,k) = tv%S(i,j,k); h(i,j+1,k) = h(i,j,k)
@@ -1686,7 +1686,7 @@ subroutine fill_OBC_halos(G, GV, OBC, tv, h, tracer_Reg)
       endif
     enddo ; enddo 
 
-    do j=jsd,jed ; do I=isd,ied
+    do j=G%jsdB+1,G%jedB ; do I=G%isdB+1,G%iedB
       if (segment%direction == OBC_DIRECTION_S .and. OBC%OBC_segment_v(I,j) /= OBC_NONE ) then
         do k=1,nz
           tv%T(i,j-1,k) = tv%T(i,j,k) ; tv%S(i,j-1,k) = tv%S(i,j,k); h(i,j-1,k) = h(i,j,k)
@@ -1703,7 +1703,7 @@ subroutine fill_OBC_halos(G, GV, OBC, tv, h, tracer_Reg)
        allocate(OBC_T_v(G%Isd:G%Ied,G%jsdB:G%jedB,nz)) ; OBC_T_v(:,:,:) = 0.0
        allocate(OBC_S_v(G%Isd:G%Ied,G%jsdB:G%jedB,nz)) ; OBC_S_v(:,:,:) = 0.0
      endif
-     do k=1,nz ; do j=js,je ; do I=is-1,ie
+     do k=1,nz ; do j=G%jsd,G%jed ; do I=G%isd,G%ied-1
         if (OBC%OBC_segment_u(I,j) /= OBC_NONE) then
           if (OBC%OBC_segment_number(OBC%OBC_segment_u(I,j))%direction == OBC_DIRECTION_E) then
             OBC_T_u(I,j,k) = tv%T(i,j,k)
@@ -1723,6 +1723,29 @@ subroutine fill_OBC_halos(G, GV, OBC, tv, h, tracer_Reg)
         else
           OBC_T_u(I,j,k) = 0.5*(tv%T(i,j,k)+tv%T(i+1,j,k))
           OBC_S_u(I,j,k) = 0.5*(tv%S(i,j,k)+tv%S(i+1,j,k))
+        endif
+     enddo; enddo ; enddo
+
+     do k=1,nz ; do J=G%jsd,G%jed-1 ; do i=G%isd,G%ied
+        if (OBC%OBC_segment_v(i,J) /= OBC_NONE) then
+          if (OBC%OBC_segment_number(OBC%OBC_segment_v(i,J))%direction == OBC_DIRECTION_N) then
+            OBC_T_v(i,J,k) = tv%T(i,j,k)
+            OBC_S_v(i,J,k) = tv%S(i,j,k)
+          elseif (OBC%OBC_segment_number(OBC%OBC_segment_v(i,J))%direction == OBC_DIRECTION_S) then
+            OBC_T_v(i,J,k) = tv%T(i,j+1,k)
+            OBC_S_v(i,J,k) = tv%S(i,j+1,k)
+          elseif (G%mask2dT(i,j) + G%mask2dT(i,j+1) > 0) then
+            OBC_T_v(i,J,k) = (G%mask2dT(i,j)*tv%T(i,j,k) + G%mask2dT(i,j+1)*tv%T(i,j+1,k)) / &
+                             (G%mask2dT(i,j) + G%mask2dT(i,j+1))
+            OBC_S_v(i,J,k) = (G%mask2dT(i,j)*tv%S(i,j,k) + G%mask2dT(i,j+1)*tv%S(i,j+1,k)) / &
+                             (G%mask2dT(i,j) + G%mask2dT(i,j+1))
+          else ! This probably shouldn't happen or maybe it doesn't matter?
+            OBC_T_v(i,J,k) = 0.5*(tv%T(i,j,k)+tv%T(i,j+1,k))
+            OBC_S_v(i,J,k) = 0.5*(tv%S(i,j,k)+tv%S(i,j+1,k))
+          endif
+        else
+          OBC_T_v(i,J,k) = 0.5*(tv%T(i,j,k)+tv%T(i,j+1,k))
+          OBC_S_v(i,J,k) = 0.5*(tv%S(i,j,k)+tv%S(i,j+1,k))
         endif
      enddo; enddo ; enddo
 
