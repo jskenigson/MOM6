@@ -67,10 +67,10 @@ subroutine update_OBC_data(OBC, G, GV, tv, h, eta, Time)
   IsdB = G%IsdB ; IedB = G%IedB ; JsdB = G%JsdB ; JedB = G%JedB
 
   if (OBC%OBC_values_config == "tidal_bay") then
-    call tidal_bay_set_OBC_data(OBC, G, h, Time)
+    call tidal_bay_set_OBC_data(OBC, G, GV, h, eta, Time)
    ! update OBC external data at the beginning of the timestamp (better T+dt/2?)
   else if (open_boundary_query(OBC,needs_ext_seg_data=.true.)) then
-    call update_OBC_segment_data(G,GV,OBC,tv, h, eta,Time)
+    call update_OBC_segment_data(G, GV, OBC, tv, h, eta, Time)
   endif
 
 end subroutine update_OBC_data
