@@ -989,26 +989,26 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, &
 
   ! Set up fields related to the open boundary conditions.
   if (apply_OBCs) then
-    if (OBC%number_of_segments > 0) then
-       call initialize_BT_OBC(G,GV,MS,OBC,eta,BT_OBC, use_BT_cont, Datu, Datv, BTCL_u, BTCL_v)
-       call create_group_pass(CS%pass_OBC_uv, BT_OBC%ubt_outer, BT_OBC%vbt_outer, CS%BT_Domain)
-       call create_group_pass(CS%pass_OBC_uv, BT_OBC%uhbt, BT_OBC%vhbt, CS%BT_Domain)
-       call create_group_pass(CS%pass_OBC_uv, BT_OBC%Cg_u, BT_OBC%Cg_v, CS%BT_Domain)
-       call create_group_pass(CS%pass_OBC, BT_OBC%eta_outer_u, BT_OBC%eta_outer_v, CS%BT_Domain,&
-            To_All+Scalar_Pair)
-       call create_group_pass(CS%pass_OBC, BT_OBC%H_u, BT_OBC%H_v, CS%BT_Domain, &
-            To_All+Scalar_Pair)
-       if (nonblock_setup) then
-         call start_group_pass(CS%pass_OBC, CS%BT_Domain)
-         call start_group_pass(CS%pass_OBC_uv, CS%BT_Domain)
-       else
-         call do_group_pass(CS%pass_OBC, CS%BT_Domain)
-         call do_group_pass(CS%pass_OBC_uv, CS%BT_Domain)
-       endif
-    else
+!   if (OBC%number_of_segments > 0) then
+!      call initialize_BT_OBC(G,GV,MS,OBC,eta,BT_OBC, use_BT_cont, Datu, Datv, BTCL_u, BTCL_v)
+!      call create_group_pass(CS%pass_OBC_uv, BT_OBC%ubt_outer, BT_OBC%vbt_outer, CS%BT_Domain)
+!      call create_group_pass(CS%pass_OBC_uv, BT_OBC%uhbt, BT_OBC%vhbt, CS%BT_Domain)
+!      call create_group_pass(CS%pass_OBC_uv, BT_OBC%Cg_u, BT_OBC%Cg_v, CS%BT_Domain)
+!      call create_group_pass(CS%pass_OBC, BT_OBC%eta_outer_u, BT_OBC%eta_outer_v, CS%BT_Domain,&
+!           To_All+Scalar_Pair)
+!      call create_group_pass(CS%pass_OBC, BT_OBC%H_u, BT_OBC%H_v, CS%BT_Domain, &
+!           To_All+Scalar_Pair)
+!      if (nonblock_setup) then
+!        call start_group_pass(CS%pass_OBC, CS%BT_Domain)
+!        call start_group_pass(CS%pass_OBC_uv, CS%BT_Domain)
+!      else
+!        call do_group_pass(CS%pass_OBC, CS%BT_Domain)
+!        call do_group_pass(CS%pass_OBC_uv, CS%BT_Domain)
+!      endif
+!   else
       call set_up_BT_OBC(OBC, eta, BT_OBC, G, GV, MS, ievf-ie, use_BT_cont, &
                                      Datu, Datv, BTCL_u, BTCL_v)
-    endif
+!   endif
   endif
 
 !   Here the vertical average accelerations due to the Coriolis, advective,
@@ -1716,10 +1716,10 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, &
       endif
     endif
 
-    if (nonblock_setup .and. OBC%number_of_segments > 0) then
-      call complete_group_pass(CS%pass_OBC, CS%BT_Domain)
-      call complete_group_pass(CS%pass_OBC_uv, CS%BT_Domain)
-    endif
+!   if (nonblock_setup .and. OBC%number_of_segments > 0) then
+!     call complete_group_pass(CS%pass_OBC, CS%BT_Domain)
+!     call complete_group_pass(CS%pass_OBC_uv, CS%BT_Domain)
+!   endif
 
 !GOMP parallel default(none) shared(isv,iev,jsv,jev,G,amer,ubt,cmer,bmer,dmer,eta_PF_BT, &
 !GOMP                               eta_PF,gtot_N,gtot_S,dgeo_de,CS,p_surf_dyn,n,        &

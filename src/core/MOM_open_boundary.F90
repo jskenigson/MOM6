@@ -477,43 +477,40 @@ subroutine setup_u_point_obc(OBC, G, segment_str, l_seg)
     OBC%OBC_segment_number(l_seg)%on_pe = .true.
 
     do j=G%HI%jsd, G%HI%jed
-      if (j>=Js_obc .and. j<=Je_obc) then ! include corners
-!      if (j>=Js_obc-1 .and. j<=Je_obc+1) then ! include corners
+      if (j>Js_obc .and. j<=Je_obc) then
 
         OBC%OBC_segment_u(I_obc,j) = l_seg
 
-!! This turns off OBCs on tangential velocities - not sure it makes a difference
-!! now.
-!        if (Je_obc>Js_obc) then ! East is outward
-!          if (this_kind == OBC_FLATHER) then
-!            ! Set v points outside segment
-!            if (OBC%OBC_segment_v(i_obc+1,J) == OBC_NONE) then
-!              OBC%OBC_segment_v(i_obc+1,J) = l_seg
-!            endif
-!            if (OBC%OBC_segment_v(i_obc+1,J-1) == OBC_NONE) then
-!              OBC%OBC_segment_v(i_obc+1,J-1) = l_seg
-!            endif
-!          endif
-!        else ! West is outward
-!          if (this_kind == OBC_FLATHER) then
-!            ! Set v points outside segment
-!            if (OBC%OBC_segment_v(i_obc,J) == OBC_NONE) then
-!              OBC%OBC_segment_v(i_obc,J) = l_seg
-!            endif
-!            if (OBC%OBC_segment_v(i_obc,J-1) == OBC_NONE) then
-!              OBC%OBC_segment_v(i_obc,J-1) = l_seg
-!            endif
-!          endif
-!        endif
+        if (OBC%OBC_segment_number(l_seg)%direction==OBC_DIRECTION_E) then ! East is outward
+          if (this_kind == OBC_FLATHER) then
+            ! Set v points outside segment
+            if (OBC%OBC_segment_v(i_obc+1,J) == OBC_NONE) then
+              OBC%OBC_segment_v(i_obc+1,J) = l_seg
+            endif
+            if (OBC%OBC_segment_v(i_obc+1,J-1) == OBC_NONE) then
+              OBC%OBC_segment_v(i_obc+1,J-1) = l_seg
+            endif
+          endif
+        else !if (OBC%OBC_segment_number(l_seg)%direction==OBC_DIRECTION_W) then ! West is outward
+          if (this_kind == OBC_FLATHER) then
+            ! Set v points outside segment
+            if (OBC%OBC_segment_v(i_obc,J) == OBC_NONE) then
+              OBC%OBC_segment_v(i_obc,J) = l_seg
+            endif
+            if (OBC%OBC_segment_v(i_obc,J-1) == OBC_NONE) then
+              OBC%OBC_segment_v(i_obc,J-1) = l_seg
+            endif
+          endif
+        endif
       endif
     enddo
   enddo ! a_loop
 
   ! Extend the segment's global_indices if needed.
-  if (.not. OBC%OBC_segment_number(l_seg)%specified) then
-    OBC%OBC_segment_number(l_seg)%global_indices = OBC%OBC_segment_number(l_seg)%global_indices &
-          + (/ 0, 0, -1, 1 /)
-  endif
+! if (.not. OBC%OBC_segment_number(l_seg)%specified) then
+!   OBC%OBC_segment_number(l_seg)%global_indices = OBC%OBC_segment_number(l_seg)%global_indices &
+!         + (/ 0, 0, -1, 1 /)
+! endif
   OBC%OBC_segment_number(l_seg)%Is_obc = I_obc
   OBC%OBC_segment_number(l_seg)%Ie_obc = I_obc
   OBC%OBC_segment_number(l_seg)%Js_obc = Js_obc
@@ -620,40 +617,40 @@ subroutine setup_v_point_obc(OBC, G, segment_str, l_seg)
     OBC%OBC_segment_number(l_seg)%on_pe = .true.
 
     do i=G%HI%isd, G%HI%ied
-!!!      if (i>=Is_obc-1 .and. i<=Ie_obc+1) then ! include corners
-      if (i>=Is_obc .and. i<=Ie_obc) then ! include corners
+      if (i>Is_obc .and. i<=Ie_obc) then
+
         OBC%OBC_segment_v(i,J_obc) = l_seg
 
- !       if (Is_obc>Ie_obc) then ! North is outward
- !         if (this_kind == OBC_FLATHER) then
- !           ! Set u points outside segment
- !           if (OBC%OBC_segment_u(I,j_obc+1) == OBC_NONE) then
- !             OBC%OBC_segment_u(I,j_obc+1) = l_seg
- !           endif
- !           if (OBC%OBC_segment_u(I-1,j_obc+1) == OBC_NONE) then
- !             OBC%OBC_segment_u(I-1,j_obc+1) = l_seg
- !           endif
- !         endif
- !       else ! South is outward
- !         if (this_kind == OBC_FLATHER) then
- !           ! Set u points outside segment
- !           if (OBC%OBC_segment_u(I,j_obc) == OBC_NONE) then
- !             OBC%OBC_segment_u(I,j_obc) = l_seg
- !           endif
- !           if (OBC%OBC_segment_u(I-1,j_obc) == OBC_NONE) then
- !             OBC%OBC_segment_u(I-1,j_obc) = l_seg
- !           endif
- !         endif
- !       endif
+        if (OBC%OBC_segment_number(l_seg)%direction==OBC_DIRECTION_N) then ! North is outward
+          if (this_kind == OBC_FLATHER) then
+            ! Set u points outside segment
+            if (OBC%OBC_segment_u(I,j_obc+1) == OBC_NONE) then
+              OBC%OBC_segment_u(I,j_obc+1) = l_seg
+            endif
+            if (OBC%OBC_segment_u(I-1,j_obc+1) == OBC_NONE) then
+              OBC%OBC_segment_u(I-1,j_obc+1) = l_seg
+            endif
+          endif
+        else !if (OBC%OBC_segment_number(l_seg)%direction==OBC_DIRECTION_S) then ! South is outward
+          if (this_kind == OBC_FLATHER) then
+            ! Set u points outside segment
+            if (OBC%OBC_segment_u(I,j_obc) == OBC_NONE) then
+              OBC%OBC_segment_u(I,j_obc) = l_seg
+            endif
+            if (OBC%OBC_segment_u(I-1,j_obc) == OBC_NONE) then
+              OBC%OBC_segment_u(I-1,j_obc) = l_seg
+            endif
+          endif
+        endif
       endif
     enddo
   enddo ! a_loop
 
   ! Extend the segment's global_indices if needed.
-  if (.not. OBC%OBC_segment_number(l_seg)%specified) then
-    OBC%OBC_segment_number(l_seg)%global_indices = OBC%OBC_segment_number(l_seg)%global_indices &
-          + (/ -1, 1, 0, 0 /)
-  endif
+! if (.not. OBC%OBC_segment_number(l_seg)%specified) then
+!   OBC%OBC_segment_number(l_seg)%global_indices = OBC%OBC_segment_number(l_seg)%global_indices &
+!         + (/ -1, 1, 0, 0 /)
+! endif
   OBC%OBC_segment_number(l_seg)%Is_obc = Is_obc
   OBC%OBC_segment_number(l_seg)%Ie_obc = Ie_obc
   OBC%OBC_segment_number(l_seg)%Js_obc = J_obc
@@ -825,10 +822,14 @@ end subroutine parse_segment_str
            fieldnam = 'none'
            word1 = extract_word(word3,':',2)
            lword=len_trim(word1)
-           read(word1(1:lword),*) value
+           read(word1(1:lword),*,end=986,err=987) value
         endif
       endif
     endif
+
+   return
+ 986 call MOM_error(FATAL,'End of record while parsing segment data specification! '//trim(segment_str))
+ 987 call MOM_error(FATAL,'Error while parsing segment data specification! '//trim(segment_str))
 
  end subroutine parse_segment_data_str
 
@@ -925,7 +926,7 @@ subroutine open_boundary_impose_normal_slope(OBC, G, depth)
 
   if (.not.associated(OBC)) return
 
-  do J=G%jsdB+1,G%jedB-1 ; do i=G%isdB+1,G%iedB-1
+  do J=G%jsd+1,G%jed-1 ; do i=G%isd+1,G%ied-1
     bc_north = .false. ; bc_south = .false. ; bc_east = .false. ; bc_west = .false.
     if (associated(OBC%OBC_segment_u)) then
       if (OBC%OBC_segment_number(OBC%OBC_segment_u(I,j))%direction == OBC_DIRECTION_E &
