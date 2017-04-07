@@ -100,8 +100,10 @@ type, public :: OBC_segment_type
   real, pointer, dimension(:,:)   :: eta=>NULL()            !< The sea-surface elevation along the segment (m).
   real, pointer, dimension(:,:,:) :: grad_normal=>NULL()    !< The gradient of the normal flow along the
                                                             !! segment (m s-1)
-  real, pointer, dimension(:,:,:) :: rx_normal => NULL()    !< The rx_old_u value for radiation coeff
+  real, pointer, dimension(:,:,:) :: rx_normal=>NULL()      !< The rx_old_u value for radiation coeff
                                                             !! for normal velocity
+  real, pointer, dimension(:,:,:) :: nudged_normal_vel=>NULL() !< The layer velocity normal to the OB segment
+                                                            !! that values should be nudged towards (m s-1).
   type(hor_index_type) :: HI !< Horizontal index ranges
 end type OBC_segment_type
 
@@ -1190,7 +1192,7 @@ subroutine radiation_open_bdry_conds(OBC, u_new, u_old, v_new, v_old, G, dt)
            else
              tau = segment%Tnudge_out
            endif
-           u_new(I,j,k) = u_new(I,j,k) + dt*tau*(segment%normal_vel(I,j,k) - u_old(I,j,k))
+           u_new(I,j,k) = u_new(I,j,k) + dt*tau*(segment%nudged_normal_vel(I,j,k) - u_old(I,j,k))
          endif
        enddo; enddo
      endif
@@ -1239,7 +1241,7 @@ subroutine radiation_open_bdry_conds(OBC, u_new, u_old, v_new, v_old, G, dt)
            else
              tau = segment%Tnudge_out
            endif
-           u_new(I,j,k) = u_new(I,j,k) + dt*tau*(segment%normal_vel(I,j,k) - u_old(I,j,k))
+           u_new(I,j,k) = u_new(I,j,k) + dt*tau*(segment%nudged_normal_vel(I,j,k) - u_old(I,j,k))
          endif
        enddo; enddo
      endif
@@ -1288,7 +1290,7 @@ subroutine radiation_open_bdry_conds(OBC, u_new, u_old, v_new, v_old, G, dt)
            else
              tau = segment%Tnudge_out
            endif
-           v_new(i,J,k) = v_new(i,J,k) + dt*tau*(segment%normal_vel(i,J,k) - v_old(i,J,k))
+           v_new(i,J,k) = v_new(i,J,k) + dt*tau*(segment%nudged_normal_vel(i,J,k) - v_old(i,J,k))
          endif
        enddo; enddo
      endif
@@ -1338,7 +1340,7 @@ subroutine radiation_open_bdry_conds(OBC, u_new, u_old, v_new, v_old, G, dt)
            else
              tau = segment%Tnudge_out
            endif
-           v_new(i,J,k) = v_new(i,J,k) + dt*tau*(segment%normal_vel(i,J,k) - v_old(i,J,k))
+           v_new(i,J,k) = v_new(i,J,k) + dt*tau*(segment%nudged_normal_vel(i,J,k) - v_old(i,J,k))
          endif
        enddo; enddo
      end if
@@ -1831,8 +1833,11 @@ subroutine allocate_OBC_segment_data(OBC, segment)
     if (segment%Flather .or. segment%specified) then
       allocate(segment%normal_vel_bt(IsdB:IedB,jsd:jed));       segment%normal_vel_bt(:,:)=0.0
     endif
-    if (segment%nudged .or. segment%specified) then
+    if (segment%specified) then
       allocate(segment%normal_vel(IsdB:IedB,jsd:jed,OBC%ke));   segment%normal_vel(:,:,:)=0.0
+    endif
+    if (segment%nudged) then
+      allocate(segment%nudged_normal_vel(IsdB:IedB,jsd:jed,OBC%ke)); segment%nudged_normal_vel(:,:,:)=0.0
     endif
     if (segment%specified) then
       allocate(segment%normal_trans(IsdB:IedB,jsd:jed,OBC%ke)); segment%normal_trans(:,:,:)=0.0
@@ -1852,8 +1857,11 @@ subroutine allocate_OBC_segment_data(OBC, segment)
     if (segment%Flather .or. segment%specified) then
       allocate(segment%normal_vel_bt(isd:ied,JsdB:JedB));       segment%normal_vel_bt(:,:)=0.0
     endif
-    if (segment%nudged .or. segment%specified) then
+    if (segment%specified) then
       allocate(segment%normal_vel(isd:ied,JsdB:JedB,OBC%ke));   segment%normal_vel(:,:,:)=0.0
+    endif
+    if (segment%nudged) then
+      allocate(segment%nudged_normal_vel(isd:ied,JsdB:JedB,OBC%ke)); segment%nudged_normal_vel(:,:,:)=0.0
     endif
     if (segment%specified) then
       allocate(segment%normal_trans(isd:ied,JsdB:JedB,OBC%ke)); segment%normal_trans(:,:,:)=0.0
@@ -2151,6 +2159,7 @@ subroutine update_OBC_segment_data(G, GV, OBC, tv, h, Time)
                       segment%normal_trans_bt(i,j)= segment%normal_trans_bt(i,j)+segment%normal_trans(i,j,k)
                    enddo
                    segment%normal_vel_bt(i,j) = segment%normal_trans_bt(i,j)/max(segment%Htot(i,j),1.e-12)
+                   if (associated(segment%nudged_normal_vel)) segment%nudged_normal_vel(i,j,:) = segment%normal_vel(i,j,:)
                 enddo
              enddo
            endif
