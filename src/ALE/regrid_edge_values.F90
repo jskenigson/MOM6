@@ -320,7 +320,8 @@ subroutine edge_values_explicit_h4( N, h, u, edge_values )
   integer               :: i, j
   real                  :: u0, u1, u2, u3
   real                  :: h0, h1, h2, h3
-  real                  :: f1, f2, f3       ! auxiliary variables
+  real                  :: f0, f1, f2, f3, rh0123 ! auxiliary variables
+  real                  :: c0, c1, c2, c3
   real                  :: e                ! edge value
   real, dimension(5)    :: x                ! used to compute edge
   real, dimension(4,4)  :: A                ! values near the boundaries
@@ -343,28 +344,29 @@ subroutine edge_values_explicit_h4( N, h, u, edge_values )
       h3 = max( hMinFrac*f1, h(i+1) )
     endif
 
+    rh0123 = 1. / ( (h0 + h3) + (h1 + h2) ) ! ~ 1/(4h)
+
     u0 = u(i-2)
     u1 = u(i-1)
     u2 = u(i)
     u3 = u(i+1)
 
-    f1 = (h0+h1) * (h2+h3) / (h1+h2)
-    f2 = u1 * h2 + u2 * h1
-    f3 = 1.0 / (h0+h1+h2) + 1.0 / (h1+h2+h3)
+    f1 = ( (h0+h1) * (h2+h3) ) * ( rh0123 / (h1+h2) ) ! Non-dim, O(1)
+    f2 = 1.0 / (h0+(h1+h2)) + 1.0 / ((h1+h2)+h3) ! ~ 1/(3h)
+    c1 = (h2 * f2) * f1 ! Non-dim, O(1/3)
+    c2 = (h1 * f2) * f1 ! Non-dim, O(1/3)
 
-    e = f1 * f2 * f3
+    f0 = h2 * (h2+h3) / ( ((h0+h1)+h2)*(h0+h1) ) ! Non-dim, O(1/3)
+    c0 = (h1*rh0123) * f0 ! Non-dim, O(1/12)
+    f1 = ((h0+2.0*h1)*rh0123) * f0 ! Non-dim, O(1/4)
+   ! c1 + f1 ! Non-dim, O(7/12)
 
-    f1 = h2 * (h2+h3) / ( (h0+h1+h2)*(h0+h1) )
-    f2 = u1*(h0+2.0*h1) - u0*h1
+    f3 = h1 * (h0+h1) / ( (h1+(h2+h3))*(h2+h3) ) ! Non-dim, O(1/3)
+    c3 = (h2*rh0123) * f3 ! Non-dim, O(1/12)
+    f2 = ((2.0*h2+h3)*rh0123) * f3 ! Non-dim, O(1/4)
+   ! c2 + f2 ! Non-dim, O(7/12)
 
-    e = e + f1*f2
-
-    f1 = h1 * (h0+h1) / ( (h1+h2+h3)*(h2+h3) )
-    f2 = u2*(2.0*h2+h3) - u3*h2
-
-    e = e + f1*f2
-
-    e = e / ( h0 + h1 + h2 + h3)
+    e = (c1*u1 + c2*u2) + ( (f1*u1 - c0*u0) + ( f2*u2 - c3*u3 ) )
 
     edge_values(i,1) = e
     edge_values(i-1,2) = e
@@ -374,7 +376,8 @@ subroutine edge_values_explicit_h4( N, h, u, edge_values )
       write(0,*) 'NaN in explicit_edge_h4 at k=',i
       write(0,*) 'u0-u3=',u0,u1,u2,u3
       write(0,*) 'h0-h3=',h0,h1,h2,h3
-      write(0,*) 'f1-f3=',f1,f2,f3
+      write(0,*) 'f0-f3=',f0,f1,f2,f3
+      write(0,*) 'c0-c3=',c0,c1,c2,c3
       stop 'Nan during edge_values_explicit_h4'
     endif
 #endif
