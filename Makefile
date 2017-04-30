@@ -105,7 +105,7 @@ $(BUILD)/%/land_null/libland_null.a: $(BUILD)/%/land_null/Makefile $(BUILD)/%/fm
 # build/compiler/mode/coupler/libcoupler.a
 $(BUILD)/%/coupler/path_names: LIST_PATHS_ARGS = $(COUPLER_SRC)/
 $(BUILD)/%/coupler/Makefile: MKMF_OPTS = -p libcoupler.a -o '-I../fms -I../ice_ocean_extras -I../atmos_null -I../land_null -I../dynamic/mom6 -I../dynamic/sis2' -c '$(CPP_DEFS)'
-$(BUILD)/%/coupler/Makefile: CPP_DEFS += -Duse_AM3_physics
+$(BUILD)/%/coupler/Makefile: CPP_DEFS = -Duse_AM3_physics
 $(BUILD)/%/coupler/libcoupler.a: $(BUILD)/%/coupler/Makefile $(BUILD)/%/fms/libfms.a $(BUILD)/%/ice_ocean_extras/libice_ocean_extras.a \
                                  $(BUILD)/%/atmos_null/libatmos_null.a $(BUILD)/%/land_null/libland_null.a \
                                  $(BUILD)/%/dynamic/sis2/libsis2.a $(BUILD)/%/dynamic/mom6/libmom6.a
@@ -122,9 +122,8 @@ $(BUILD)/%/icebergs/libicebergs.a: $(BUILD)/%/icebergs/Makefile $(BUILD)/%/fms/l
 # Generate lists of variables and dependencies for SIS2 libraries
 # $(1) = compiler, $(2) = mode, $(3) = memory style, $(4) = mom6 configuration
 define sis2-variables
+$(BUILD)/$(1)/$(2)/$(3)/$(4)/Makefile: CPP_DEFS = -D_FILE_VERSION="`../../../../../$(MKMF_SRC)/bin/git-version-string $$$$<`" -DSTATSLABEL=\"$(STATS_PLATFORM)$(1)$(STATS_COMPILER_VER)\"
 $(BUILD)/$(1)/$(2)/$(3)/$(4)/libsis2.a: $(BUILD)/$(1)/$(2)/icebergs/libicebergs.a $(BUILD)/$(1)/$(2)/ice_ocean_extras/libice_ocean_extras.a
-$(BUILD)/$(1)/$(2)/$(3)/$(4)/libsis2.a: LIST_PATHS_ARGS += $(MOM6_SRC)/src/framework/MOM_memory_macros.h
-$(BUILD)/$(1)/$(2)/$(3)/$(4)/libsis2.a: CPP_DEFS += -DSTATSLABEL=\"$(STATS_PLATFORM)$(1)$(STATS_COMPILER_VER)\"
 .SECONDARY: $(BUILD)/$(1)/$(2)/$(3)/$(4)/path_names
 .SECONDARY: $(BUILD)/$(1)/$(2)/$(3)/$(4)/Makefile
 .SECONDARY: $(BUILD)/$(1)/$(2)/$(3)/$(4)/libsis2.a
@@ -132,9 +131,8 @@ endef
 $(foreach c,$(COMPILERS),$(foreach m,repro debug coverage,$(foreach d,dynamic dynamic_symmetric,$(foreach o,sis2,$(eval $(call sis2-variables,$(c),$(m),$(d),$(o)))))))
 
 # build/compiler/mode/sis2/libsis2.a
-$(BUILD)/%/sis2/path_names: LIST_PATHS_ARGS += $(SIS2_SRC)/
-$(BUILD)/%/sis2/Makefile: MKMF_OPTS = -p libsis2.a -o '-I../../fms -I../mom6 -I../../icebergs -I../../ice_ocean_extras'
-$(BUILD)/%/mom6/libsis2.a: CPP_DEFS += -D_FILE_VERSION="`../../../../../$(MKMF_SRC)/bin/git-version-string $$<`"
+$(BUILD)/%/sis2/path_names: LIST_PATHS_ARGS += $(SIS2_SRC)/ $(MOM6_SRC)/src/framework/MOM_memory_macros.h
+$(BUILD)/%/sis2/Makefile: MKMF_OPTS = -p libsis2.a -o '-I../../fms -I../mom6 -I../../icebergs -I../../ice_ocean_extras' -c '$(CPP_DEFS)'
 $(BUILD)/%/sis2/libsis2.a: $(BUILD)/%/sis2/Makefile $(BUILD)/%/mom6/libmom6.a
 	rm -f $@
 	(cd $(@D); source ../../../env && make $(call make_args, $(call fms_mode, $@)) $(@F))
@@ -142,10 +140,9 @@ $(BUILD)/%/sis2/libsis2.a: $(BUILD)/%/sis2/Makefile $(BUILD)/%/mom6/libmom6.a
 # Generate lists of variables and dependencies for MOM6 libraries
 # $(1) = compiler, $(2) = mode, $(3) = memory style
 define libmom6-variables
+$(BUILD)/$(1)/$(2)/$(3)/mom6/path_names: LIST_PATHS_ARGS = $(MOM6_SRC)/src/*/ $(MOM6_SRC)/src/*/*/ $(MOM6_SRC)/config_src/$(3)/ $(MOM6_SRC)/config_src/coupled_driver/
+$(BUILD)/$(1)/$(2)/$(3)/mom6/Makefile: CPP_DEFS += -D_FILE_VERSION="`../../../../../$(MKMF_SRC)/bin/git-version-string $$$$<`" -DSTATSLABEL=\"$(STATS_PLATFORM)$(1)$(STATS_COMPILER_VER)\"
 $(BUILD)/$(1)/$(2)/$(3)/mom6/libmom6.a: $(BUILD)/$(1)/$(2)/fms/libfms.a
-$(BUILD)/$(1)/$(2)/$(3)/mom6/libmom6.a: LIST_PATHS_ARGS += $(MOM6_SRC)/src/*/ $(MOM6_SRC)/src/*/*/
-$(BUILD)/$(1)/$(2)/$(3)/mom6/libmom6.a: LIST_PATHS_ARGS += $(MOM6_SRC)/config_src/$(3)/ $(MOM6_SRC)/config_src/coupled_driver/
-$(BUILD)/$(1)/$(2)/$(3)/mom6/libmom6.a: CPP_DEFS += -DSTATSLABEL=\"$(STATS_PLATFORM)$(1)$(STATS_COMPILER_VER)\"
 .SECONDARY: $(BUILD)/$(1)/$(2)/$(3)/mom6/path_names
 .SECONDARY: $(BUILD)/$(1)/$(2)/$(3)/mom6/Makefile
 .SECONDARY: $(BUILD)/$(1)/$(2)/$(3)/mom6/libmom6.a
@@ -154,7 +151,6 @@ $(foreach c,$(COMPILERS),$(foreach m,repro debug coverage,$(foreach d,dynamic dy
 
 # build/compiler/mode/mom6_memory/mom6/libmom6.a
 $(BUILD)/%/mom6/libmom6.a: MKMF_OPTS = -p libmom6.a -o '-I../../fms' -c '$(CPP_DEFS)'
-$(BUILD)/%/mom6/libmom6.a: CPP_DEFS += -D_FILE_VERSION="`../../../../../$(MKMF_SRC)/bin/git-version-string $$<`"
 $(BUILD)/%/mom6/libmom6.a: $(BUILD)/%/mom6/Makefile
 	rm -f $@
 	(cd $(@D); source ../../../env && make $(call make_args, $(call fms_mode, $@)) $(@F))
@@ -162,30 +158,33 @@ $(BUILD)/%/mom6/libmom6.a: $(BUILD)/%/mom6/Makefile
 # Generate lists of variables and dependencies for MOM6 executables
 # $(1) = compiler, $(2) = mode, $(3) = memory style, $(4) = mom6 configuration
 define mom6-ocean-only-variables
+$(BUILD)/$(1)/$(2)/$(3)/$(4)/path_names: LIST_PATHS_ARGS += $(MOM6_SRC)/src/*/ $(MOM6_SRC)/src/*/*/ $(MOM6_SRC)/config_src/$(3)/
+$(BUILD)/$(1)/$(2)/$(3)/$(4)/Makefile: CPP_DEFS += -D_FILE_VERSION="`../../../../../$(MKMF_SRC)/bin/git-version-string $$$$<`"
+$(BUILD)/$(1)/$(2)/$(3)/$(4)/Makefile: CPP_DEFS += -DSTATSLABEL=\"$(STATS_PLATFORM)$(1)$(STATS_COMPILER_VER)\"
+$(BUILD)/$(1)/$(2)/$(3)/$(4)/Makefile: LIBS = -L../../fms -lfms
 $(BUILD)/$(1)/$(2)/$(3)/$(4)/MOM6: $(BUILD)/$(1)/$(2)/fms/libfms.a
-$(BUILD)/$(1)/$(2)/$(3)/$(4)/MOM6: LIST_PATHS_ARGS += $(MOM6_SRC)/src/*/ $(MOM6_SRC)/src/*/*/
-$(BUILD)/$(1)/$(2)/$(3)/$(4)/MOM6: LIST_PATHS_ARGS += $(MOM6_SRC)/config_src/$(3)/ $(MOM6_SRC)/config_src/solo_driver/
-$(BUILD)/$(1)/$(2)/$(3)/$(4)/MOM6: LIBS += -L../../fms -lfms
-$(BUILD)/$(1)/$(2)/$(3)/$(4)/MOM6: CPP_DEFS += -DSTATSLABEL=\"$(STATS_PLATFORM)$(1)$(STATS_COMPILER_VER)\"
 .SECONDARY: $(BUILD)/$(1)/$(2)/$(3)/$(4)/path_names
 .SECONDARY: $(BUILD)/$(1)/$(2)/$(3)/$(4)/Makefile
 endef
 $(foreach c,$(COMPILERS),$(foreach m,repro debug coverage,$(foreach d,dynamic dynamic_symmetric,$(foreach o,mom6 ocean_only,$(eval $(call mom6-ocean-only-variables,$(c),$(m),$(d),$(o)))))))
 
 define mom6-sis2-variables
+$(BUILD)/$(1)/$(2)/$(3)/$(4)/Makefile: LIBS += $(foreach l,fms coupler atmos_null land_null ice_ocean_extras icebergs fms,-L../../$(l))
+$(BUILD)/$(1)/$(2)/$(3)/$(4)/Makefile: LIBS += $(foreach l,sis2 mom6,-L../$(l))
+$(BUILD)/$(1)/$(2)/$(3)/$(4)/Makefile: LIBS += $(foreach l,coupler atmos_null land_null sis2 ice_ocean_extras icebergs mom6 fms,-l$(l))
 $(BUILD)/$(1)/$(2)/$(3)/$(4)/MOM6: $(BUILD)/$(1)/$(2)/fms/libfms.a
 $(BUILD)/$(1)/$(2)/$(3)/$(4)/MOM6: $(BUILD)/$(1)/$(2)/icebergs/libicebergs.a
 $(BUILD)/$(1)/$(2)/$(3)/$(4)/MOM6: $(BUILD)/$(1)/$(2)/$(3)/sis2/libsis2.a
 $(BUILD)/$(1)/$(2)/$(3)/$(4)/MOM6: $(BUILD)/$(1)/$(2)/coupler/libcoupler.a
-$(BUILD)/$(1)/$(2)/$(3)/$(4)/MOM6: LIBS += $(foreach l,fms coupler atmos_null land_null ice_ocean_extras icebergs fms,-L../../$(l))
-$(BUILD)/$(1)/$(2)/$(3)/$(4)/MOM6: LIBS += $(foreach l,sis2 mom6,-L../$(l))
-$(BUILD)/$(1)/$(2)/$(3)/$(4)/MOM6: LIBS += $(foreach l,coupler atmos_null land_null sis2 ice_ocean_extras icebergs mom6 fms,-l$(l))
 .SECONDARY: $(BUILD)/$(1)/$(2)/$(3)/$(4)/path_names
 .SECONDARY: $(BUILD)/$(1)/$(2)/$(3)/$(4)/Makefile
 endef
 $(foreach c,$(COMPILERS),$(foreach m,repro debug coverage,$(foreach d,dynamic dynamic_symmetric,$(foreach o,ice_ocean_SIS2,$(eval $(call mom6-sis2-variables,$(c),$(m),$(d),$(o)))))))
 
 define mom6-am2-variables
+$(BUILD)/$(1)/$(2)/$(3)/$(4)/Makefile: LIBS += $(foreach l,fms coupler am2 lm3 ice_param icebergs fms,-L../../$(l))
+$(BUILD)/$(1)/$(2)/$(3)/$(4)/Makefile: LIBS += $(foreach l,sis2 mom6,-L../$(l))
+$(BUILD)/$(1)/$(2)/$(3)/$(4)/Makefile: LIBS += $(foreach l,coupler am2 lm3 sis2 ice_param icebergs mom6 fms,-l$(l))
 $(BUILD)/$(1)/$(2)/$(3)/$(4)/MOM6: $(BUILD)/$(1)/$(2)/fms/libfms.a
 $(BUILD)/$(1)/$(2)/$(3)/$(4)/MOM6: $(BUILD)/$(1)/$(2)/icebergs/libicebergs.a
 $(BUILD)/$(1)/$(2)/$(3)/$(4)/MOM6: $(BUILD)/$(1)/$(2)/$(3)/sis2/libsis2.a
@@ -193,9 +192,6 @@ $(BUILD)/$(1)/$(2)/$(3)/$(4)/MOM6: $(BUILD)/$(1)/$(2)/coupler/libcoupler.a
 $(BUILD)/$(1)/$(2)/$(3)/$(4)/MOM6: $(BUILD)/$(1)/$(2)/ice_param/libice_param.a
 $(BUILD)/$(1)/$(2)/$(3)/$(4)/MOM6: $(BUILD)/$(1)/$(2)/lm3/liblm3.a
 $(BUILD)/$(1)/$(2)/$(3)/$(4)/MOM6: $(BUILD)/$(1)/$(2)/am2/libam2.a
-$(BUILD)/$(1)/$(2)/$(3)/$(4)/MOM6: LIBS += $(foreach l,fms coupler am2 lm3 ice_param icebergs fms,-L../../$(l))
-$(BUILD)/$(1)/$(2)/$(3)/$(4)/MOM6: LIBS += $(foreach l,sis2 mom6,-L../$(l))
-$(BUILD)/$(1)/$(2)/$(3)/$(4)/MOM6: LIBS += $(foreach l,coupler am2 lm3 sis2 ice_param icebergs mom6 fms,-l$(l))
 .SECONDARY: $(BUILD)/$(1)/$(2)/$(3)/$(4)/path_names
 .SECONDARY: $(BUILD)/$(1)/$(2)/$(3)/$(4)/Makefile
 endef
@@ -211,8 +207,8 @@ $(foreach c,$(COMPILERS),$(foreach m,repro debug coverage,$(foreach d,dynamic dy
 #mode = $(word 3,$(call slash_to_list, $(1)))
 #mom6_memory = $(word 4,$(call slash_to_list, $(1)))
 #mom6_configuration = $(word 5,$(call slash_to_list, $(1)))
+$(BUILD)/%/ocean_only/path_names: LIST_PATHS_ARGS = $(MOM6_SRC)/config_src/solo_driver/
 $(BUILD)/%/MOM6: MKMF_OPTS = -p MOM6 -o '-I../../fms' -l '$(LIBS)' -c '$(CPP_DEFS)'
-$(BUILD)/%/MOM6: CPP_DEFS += -D_FILE_VERSION="`../../../../../$(MKMF_SRC)/bin/git-version-string $$<`"
 $(BUILD)/%/MOM6: $(BUILD)/%/Makefile
 	rm -f $@
 	(cd $(@D); source ../../../env && make $(call make_args, $(call fms_mode, $@)) $(@F))
@@ -245,13 +241,14 @@ MOM6-examples $(SRC_DIR):
 	git clone --recursive https://github.com/NOAA-GFDL/MOM6-examples.git
 ICE_PARAM_SRC=$(SRC_DIR)/ice_param
 ATMOS_PARAM_SRC=$(SRC_DIR)/atmos_param_am3
+LM3_SRC=$(LM3)/land_param $(LM3)/land_lad2_cpp
+AM2_SRC=$(AM2)/atmos_drivers/coupled $(AM2)/atmos_fv_dynamics/driver/coupled $(AM2)/atmos_fv_dynamics/model $(AM2)/atmos_fv_dynamics/tools $(AM2)/atmos_shared_am3 $(ATMOS_PARAM_SRC)
 LM3=$(SRC_DIR)/LM3
 LM3_REPOS=$(LM3)/land_param $(LM3)/land_lad2
-LM3_SRC=$(LM3)/land_param $(LM3)/land_lad2_cpp
 AM2=$(SRC_DIR)/AM2
 AM2_REPOS=$(AM2)/atmos_drivers $(AM2)/atmos_fv_dynamics $(AM2)/atmos_shared_am3
-AM2_SRC=$(AM2)/atmos_drivers/coupled $(AM2)/atmos_fv_dynamics/driver/coupled $(AM2)/atmos_fv_dynamics/model $(AM2)/atmos_fv_dynamics/tools $(AM2)/atmos_shared_am3 $(ATMOS_PARAM_SRC)
 FMS_tag = ulm_201510
+#FMS_tag = verona_201701
 $(ICE_PARAM_SRC) $(ATMOS_PARAM_SRC) $(AM2_REPOS) $(LM3)/land_param: | $(SRC_DIR)
 	(cd $(@D); git clone http://gitlab.gfdl.noaa.gov/fms/$(@F).git)
 	(cd $@; git checkout $(FMS_tag))
@@ -274,7 +271,7 @@ MOM6-examples/.datasets: /lustre/f1/pdata/gfdl_O/datasets | MOM6-examples
 	(cd $(@D); ln -s $< $(@F))
 $(AM2) $(LM3): | $(SRC_DIR)
 	mkdir -p $@
-clone_dev: MOM6-examples $(ICE_PARAM_SRC) $(ATMOS_PARAM_SRC) $(SIS1_SRC) $(LM3_REPOS) $(AM2_REPOS) MOM6-examples/.datasets
+clone_dev: $(ICE_PARAM_SRC) $(ATMOS_PARAM_SRC) $(SIS1_SRC) $(LM3_REPOS) $(AM2_REPOS) MOM6-examples/.datasets
 
 whats_built:
 	find $(BUILD) -name "MOM6" -o -name "lib*.a"
