@@ -1,4 +1,9 @@
-#
+# gaea12
+# clone_dev 1m30s
+# test -j 4m15s
+# test2 -j 11m10s
+# test3 -j 31m50s
+
 
 SHELL = bash
 COMPILERS = gnu intel pgi
@@ -119,7 +124,6 @@ $(BUILD)/%/icebergs/libicebergs.a: $(BUILD)/%/icebergs/Makefile $(BUILD)/%/fms/l
 define sis2-variables
 $(BUILD)/$(1)/$(2)/$(3)/$(4)/libsis2.a: $(BUILD)/$(1)/$(2)/icebergs/libicebergs.a $(BUILD)/$(1)/$(2)/ice_ocean_extras/libice_ocean_extras.a
 $(BUILD)/$(1)/$(2)/$(3)/$(4)/libsis2.a: LIST_PATHS_ARGS += $(MOM6_SRC)/src/framework/MOM_memory_macros.h
-$(BUILD)/$(1)/$(2)/$(3)/$(4)/libsis2.a: CPP_DEFS += -D_FILE_VERSION="`../../../../../$(MKMF_SRC)/bin/git-version-string $$<`"
 $(BUILD)/$(1)/$(2)/$(3)/$(4)/libsis2.a: CPP_DEFS += -DSTATSLABEL=\"$(STATS_PLATFORM)$(1)$(STATS_COMPILER_VER)\"
 .SECONDARY: $(BUILD)/$(1)/$(2)/$(3)/$(4)/path_names
 .SECONDARY: $(BUILD)/$(1)/$(2)/$(3)/$(4)/Makefile
@@ -130,6 +134,7 @@ $(foreach c,$(COMPILERS),$(foreach m,repro debug coverage,$(foreach d,dynamic dy
 # build/compiler/mode/sis2/libsis2.a
 $(BUILD)/%/sis2/path_names: LIST_PATHS_ARGS += $(SIS2_SRC)/
 $(BUILD)/%/sis2/Makefile: MKMF_OPTS = -p libsis2.a -o '-I../../fms -I../mom6 -I../../icebergs -I../../ice_ocean_extras'
+$(BUILD)/%/mom6/libsis2.a: CPP_DEFS += -D_FILE_VERSION="`../../../../../$(MKMF_SRC)/bin/git-version-string $$<`"
 $(BUILD)/%/sis2/libsis2.a: $(BUILD)/%/sis2/Makefile $(BUILD)/%/mom6/libmom6.a
 	rm -f $@
 	(cd $(@D); source ../../../env && make $(call make_args, $(call fms_mode, $@)) $(@F))
@@ -140,7 +145,6 @@ define libmom6-variables
 $(BUILD)/$(1)/$(2)/$(3)/mom6/libmom6.a: $(BUILD)/$(1)/$(2)/fms/libfms.a
 $(BUILD)/$(1)/$(2)/$(3)/mom6/libmom6.a: LIST_PATHS_ARGS += $(MOM6_SRC)/src/*/ $(MOM6_SRC)/src/*/*/
 $(BUILD)/$(1)/$(2)/$(3)/mom6/libmom6.a: LIST_PATHS_ARGS += $(MOM6_SRC)/config_src/$(3)/ $(MOM6_SRC)/config_src/coupled_driver/
-$(BUILD)/$(1)/$(2)/$(3)/mom6/libmom6.a: CPP_DEFS += -D_FILE_VERSION="`../../../../../$(MKMF_SRC)/bin/git-version-string $$<`"
 $(BUILD)/$(1)/$(2)/$(3)/mom6/libmom6.a: CPP_DEFS += -DSTATSLABEL=\"$(STATS_PLATFORM)$(1)$(STATS_COMPILER_VER)\"
 .SECONDARY: $(BUILD)/$(1)/$(2)/$(3)/mom6/path_names
 .SECONDARY: $(BUILD)/$(1)/$(2)/$(3)/mom6/Makefile
@@ -162,7 +166,6 @@ $(BUILD)/$(1)/$(2)/$(3)/$(4)/MOM6: $(BUILD)/$(1)/$(2)/fms/libfms.a
 $(BUILD)/$(1)/$(2)/$(3)/$(4)/MOM6: LIST_PATHS_ARGS += $(MOM6_SRC)/src/*/ $(MOM6_SRC)/src/*/*/
 $(BUILD)/$(1)/$(2)/$(3)/$(4)/MOM6: LIST_PATHS_ARGS += $(MOM6_SRC)/config_src/$(3)/ $(MOM6_SRC)/config_src/solo_driver/
 $(BUILD)/$(1)/$(2)/$(3)/$(4)/MOM6: LIBS += -L../../fms -lfms
-$(BUILD)/$(1)/$(2)/$(3)/$(4)/MOM6: CPP_DEFS += -D_FILE_VERSION="`../../../../../$(MKMF_SRC)/bin/git-version-string $$<`"
 $(BUILD)/$(1)/$(2)/$(3)/$(4)/MOM6: CPP_DEFS += -DSTATSLABEL=\"$(STATS_PLATFORM)$(1)$(STATS_COMPILER_VER)\"
 .SECONDARY: $(BUILD)/$(1)/$(2)/$(3)/$(4)/path_names
 .SECONDARY: $(BUILD)/$(1)/$(2)/$(3)/$(4)/Makefile
@@ -209,6 +212,7 @@ $(foreach c,$(COMPILERS),$(foreach m,repro debug coverage,$(foreach d,dynamic dy
 #mom6_memory = $(word 4,$(call slash_to_list, $(1)))
 #mom6_configuration = $(word 5,$(call slash_to_list, $(1)))
 $(BUILD)/%/MOM6: MKMF_OPTS = -p MOM6 -o '-I../../fms' -l '$(LIBS)' -c '$(CPP_DEFS)'
+$(BUILD)/%/MOM6: CPP_DEFS += -D_FILE_VERSION="`../../../../../$(MKMF_SRC)/bin/git-version-string $$<`"
 $(BUILD)/%/MOM6: $(BUILD)/%/Makefile
 	rm -f $@
 	(cd $(@D); source ../../../env && make $(call make_args, $(call fms_mode, $@)) $(@F))
@@ -270,7 +274,7 @@ MOM6-examples/.datasets: /lustre/f1/pdata/gfdl_O/datasets | MOM6-examples
 	(cd $(@D); ln -s $< $(@F))
 $(AM2) $(LM3): | $(SRC_DIR)
 	mkdir -p $@
-clone_dev: $(ICE_PARAM_SRC) $(ATMOS_PARAM_SRC) $(SIS1_SRC) $(LM3_REPOS) $(AM2_REPOS) MOM6-examples/.datasets
+clone_dev: MOM6-examples $(ICE_PARAM_SRC) $(ATMOS_PARAM_SRC) $(SIS1_SRC) $(LM3_REPOS) $(AM2_REPOS) MOM6-examples/.datasets
 
 whats_built:
 	find $(BUILD) -name "MOM6" -o -name "lib*.a"
