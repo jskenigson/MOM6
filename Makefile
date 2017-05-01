@@ -24,6 +24,7 @@ BUILD = build
 SITE = ncrc
 
 CONFIGS = MOM6-examples
+HIDE_STDOUT = > log
 
 # Converts a path a/b/c to a list "a b c"
 slash_to_list = $(subst /, ,$(1))
@@ -57,14 +58,14 @@ endif
 $(BUILD)/%/path_names: $(wildcard $(LIST_PATHS_ARGS)*) $(wildcard $(LIST_PATHS_ARGS)*/*) $(wildcard $(LIST_PATHS_ARGS)*/*/*) $(wildcard $(LIST_PATHS_ARGS)*/*/*/*)
 $(BUILD)/%/path_names: Makefile
 	mkdir -p $(@D)
-	(cd $(@D); rm -f path_names; $(call rel_path,$(@D))$(LIST_PATHS) $(foreach p,$(LIST_PATHS_ARGS),$(call rel_path,$(@D))$(p)))
+	(cd $(@D); rm -f path_names; $(call rel_path,$(@D))$(LIST_PATHS) $(foreach p,$(LIST_PATHS_ARGS),$(call rel_path,$(@D))$(p)) $(HIDE_STDOUT))
 
 # Makefile:
 # - must have MKMF_OPTS set for final target
 # fms_compiler = gnu, intel, pgi, cray, ...
 fms_compiler = $(word 2,$(call slash_to_list, $(1)))
 $(BUILD)/%/Makefile: $(BUILD)/%/path_names
-	(cd $(@D); $(call rel_path,$(@D))$(MKMF) -t $(call rel_path,$(@D))$(MKMF_SRC)/templates/$(SITE)-$(call fms_compiler,$@).mk $(MKMF_OPTS) path_names)
+	(cd $(@D); $(call rel_path,$(@D))$(MKMF) -t $(call rel_path,$(@D))$(MKMF_SRC)/templates/$(SITE)-$(call fms_compiler,$@).mk $(MKMF_OPTS) path_names $(HIDE_STDOUT) 2>&1)
 
 # Keep path_names, makefiles and libraries
 define secondaries
@@ -82,7 +83,7 @@ define compile
 $(BUILD)/%/$(1)$(2): $(BUILD)/%/$(1)Makefile $(foreach l,$(4),$(BUILD)/%/$(l))
 	rm -f $$@
 	@echo Building $$@
-	(cd $$(@D); source $(3) && make NETCDF=3 $$(call make_args, $$(call fms_mode, $$@)) $$(@F))
+	(cd $$(@D); source $(3) && make NETCDF=3 $$(call make_args, $$(call fms_mode, $$@)) $$(@F) $(HIDE_STDOUT))
 endef
 
 # build/compiler/mode/fms/libfms.a
