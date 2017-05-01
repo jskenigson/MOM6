@@ -164,10 +164,13 @@ $(BUILD)/$(1)/$(2)/$(3)/$(4)/MOM6: ENV_SCRIPT = ../../../env
 endef
 $(foreach c,$(COMPILERS),$(foreach m,repro debug coverage,$(foreach d,dynamic dynamic_symmetric,$(foreach o,ocean_only,$(eval $(call mom6-ocean-only-variables,$(c),$(m),$(d),$(o)))))))
 
+define mom6-static-mom-memory
+$(BUILD)/$(1)/$(2)/$(3)/$(4)/$(word 3,$(call slash_to_list,$(5)))/path_names: LIST_PATHS_ARGS += $(5)/
+endef
 define mom6-static-variables
 $(BUILD)/$(1)/$(2)/$(3)/$(4)/%/path_names: LIST_PATHS_ARGS += $(MOM6_SRC)/src/*/ $(MOM6_SRC)/src/*/*/
 $(BUILD)/$(1)/$(2)/$(3)/$(4)/%/path_names: LIST_PATHS_ARGS += $(MOM6_SRC)/config_src/solo_driver/
-$(BUILD)/$(1)/$(2)/$(3)/$(4)/%/path_names: LIST_PATHS_ARGS += $(CONFIGS)/$(4)/
+$(foreach e,$(wildcard $(CONFIGS)/$(4)/*),$(eval $(call mom6-static-mom-memory,$(1),$(2),$(3),$(4),$(e))))
 $(BUILD)/$(1)/$(2)/$(3)/$(4)/%/Makefile: MKMF_OPTS = -p MOM6 -o '-I../../../fms' -l '$$(LIBS)' -c '$$(CPP_DEFS)'
 $(BUILD)/$(1)/$(2)/$(3)/$(4)/%/Makefile: CPP_DEFS += -D_FILE_VERSION="`../../../../../../$(MKMF_SRC)/bin/git-version-string $$$$<`"
 $(BUILD)/$(1)/$(2)/$(3)/$(4)/%/Makefile: CPP_DEFS += -DSTATSLABEL=\"$(STATS_PLATFORM)$(1)$(STATS_COMPILER_VER)\"
