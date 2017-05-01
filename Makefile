@@ -88,7 +88,7 @@ endef
 
 # build/compiler/mode/fms/libfms.a
 $(BUILD)/%/fms/path_names: LIST_PATHS_ARGS = $(FMS_SRC)/
-$(BUILD)/%/fms/Makefile: MKMF_OPTS = -p libfms.a -c '-Duse_netCDF'
+$(BUILD)/%/fms/Makefile: MKMF_OPTS = -p libfms.a -c '-Duse_netCDF -Duse_libMPI'
 $(eval $(call compile,fms/,libfms.a,../../env))
 
 # build/compiler/mode/ice_ocean_extras/libice_ocean_extras.a
@@ -240,7 +240,7 @@ $(eval $(call compile,ice_param/,libice_param.a,../../env,fms/libfms.a))
 # build/compiler/mode/am2/libam2.a
 $(BUILD)/%/am2/path_names: LIST_PATHS_ARGS = $(AM2_SRC)/ $(AM2_SRC)/*/ $(AM2_SRC)/*/*/ $(FMS_SRC)/include/fms_platform.h
 $(BUILD)/%/am2/Makefile: MKMF_OPTS = -p libam2.a -o '-I../fms' -c '$(CPP_DEFS)'
-$(BUILD)/%/am2/Makefile: CPP_DEFS += -DSPMD
+$(BUILD)/%/am2/Makefile: CPP_DEFS += -DSPMD -Duse_AM3_physics
 $(eval $(call compile,am2/,libam2.a,../../env,fms/libfms.a))
 
 ############## Below here is for development of the script
@@ -255,8 +255,7 @@ LM3=$(SRC_DIR)/LM3
 LM3_REPOS=$(LM3)/land_param $(LM3)/land_lad2
 AM2=$(SRC_DIR)/AM2
 AM2_REPOS=$(AM2)/atmos_drivers $(AM2)/atmos_fv_dynamics $(AM2)/atmos_shared_am3
-FMS_tag = ulm_201510
-#FMS_tag = verona_201701
+FMS_tag = prerelease_warsaw_20170330
 $(ICE_PARAM_SRC) $(ATMOS_PARAM_SRC) $(AM2_REPOS) $(LM3)/land_param: | $(SRC_DIR)
 	(cd $(@D); git clone http://gitlab.gfdl.noaa.gov/fms/$(@F).git)
 	(cd $@; git checkout $(FMS_tag))
