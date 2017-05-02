@@ -1,14 +1,20 @@
-# gaea12
-# clone_dev 1m30s
-# test -j 4m15s
-# test2 -j 11m10s
-# test3 -j 31m50s
+# Executable targets: build/compiler/mode/mom6_memory/mom6_configuration/MOM6
+#
+#   compiler = gnu, intel, pgi, cray, ...
+#   mode = repro, debug, coverage, ...
+#   If mom6_memory = dynamic or dynamic_symmetric
+#     mom6_configuration = ocean_only, ice_ocean_SIS, ice_ocean_SIS2, land_ice_ocean_LM3_SIS2, coupled_AM2_LM3_SIS, coupled_AM2_LM3_SIS2
+#   If mom6_memory = static
+#     mom6_configuration = ocean_only/DOME ocean_only/benchmark ocean_only/double_gyre ...
+#
+# Intermediate targets:
+#   build/compiler/mode/%/lib%.a  for % = fms, icebergs, ice_ocean_extras, am2, lm3
+#   build/compiler/mode/mom6_memory/%/lib%.a  for % = mom6, sis2
 
+CONFIGS = MOM6-examples
 
-SHELL = bash
-COMPILERS = gnu intel pgi
-
-SRC_DIR = MOM6-examples/src
+# Local relative paths to with source whose version is usually determined by sub-modules in MOM6-examples
+SRC_DIR = $(CONFIGS)/src
 FMS_SRC = $(SRC_DIR)/FMS
 MOM6_SRC = $(SRC_DIR)/MOM6
 SIS2_SRC = $(SRC_DIR)/SIS2
@@ -23,7 +29,19 @@ MKMF = $(MKMF_SRC)/bin/mkmf
 BUILD = build
 SITE = ncrc
 
-CONFIGS = MOM6-examples
+# Local relative paths to source available behind GFDL firewall
+ICE_PARAM_SRC=$(SRC_DIR)/ice_param
+ATMOS_PARAM_SRC=$(SRC_DIR)/atmos_param_am3
+LM3_SRC=$(LM3)/land_param $(LM3)/land_lad2_cpp
+AM2_SRC=$(AM2)/atmos_drivers/coupled $(AM2)/atmos_fv_dynamics/driver/coupled $(AM2)/atmos_fv_dynamics/model $(AM2)/atmos_fv_dynamics/tools $(AM2)/atmos_shared_am3 $(ATMOS_PARAM_SRC)
+LM3=$(SRC_DIR)/LM3
+LM3_REPOS=$(LM3)/land_param $(LM3)/land_lad2
+AM2=$(SRC_DIR)/AM2
+AM2_REPOS=$(AM2)/atmos_drivers $(AM2)/atmos_fv_dynamics $(AM2)/atmos_shared_am3
+CITY_TAG = prerelease_warsaw_20170330
+
+SHELL = bash
+COMPILERS = gnu intel pgi
 HIDE_STDOUT = > log
 
 # Converts a path a/b/c to a list "a b c"
@@ -58,14 +76,14 @@ endif
 $(BUILD)/%/path_names: $(wildcard $(LIST_PATHS_ARGS)*) $(wildcard $(LIST_PATHS_ARGS)*/*) $(wildcard $(LIST_PATHS_ARGS)*/*/*) $(wildcard $(LIST_PATHS_ARGS)*/*/*/*)
 $(BUILD)/%/path_names: Makefile
 	mkdir -p $(@D)
-	(cd $(@D); rm -f path_names; $(call rel_path,$(@D))$(LIST_PATHS) $(foreach p,$(LIST_PATHS_ARGS),$(call rel_path,$(@D))$(p)) $(HIDE_STDOUT))
+	cd $(@D); rm -f path_names; $(call rel_path,$(@D))$(LIST_PATHS) $(foreach p,$(LIST_PATHS_ARGS),$(call rel_path,$(@D))$(p)) $(HIDE_STDOUT)
 
 # Makefile:
 # - must have MKMF_OPTS set for final target
 # fms_compiler = gnu, intel, pgi, cray, ...
 fms_compiler = $(word 2,$(call slash_to_list, $(1)))
 $(BUILD)/%/Makefile: $(BUILD)/%/path_names
-	(cd $(@D); $(call rel_path,$(@D))$(MKMF) -t $(call rel_path,$(@D))$(MKMF_SRC)/templates/$(SITE)-$(call fms_compiler,$@).mk $(MKMF_OPTS) path_names $(HIDE_STDOUT) 2>&1)
+	cd $(@D); $(call rel_path,$(@D))$(MKMF) -t $(call rel_path,$(@D))$(MKMF_SRC)/templates/$(SITE)-$(call fms_compiler,$@).mk $(MKMF_OPTS) path_names $(HIDE_STDOUT) 2>&1
 
 # Keep path_names, makefiles and libraries
 define secondaries
@@ -83,7 +101,7 @@ define compile
 $(BUILD)/%/$(1)$(2): $(BUILD)/%/$(1)Makefile $(foreach l,$(4),$(BUILD)/%/$(l))
 	rm -f $$@
 	@echo Building $$@
-	(cd $$(@D); source $(3) && make NETCDF=3 $$(call make_args, $$(call fms_mode, $$@)) $$(@F) $(HIDE_STDOUT))
+	cd $$(@D); source $(3) && make NETCDF=3 $$(call make_args, $$(call fms_mode, $$@)) $$(@F) $(HIDE_STDOUT)
 endef
 
 # build/compiler/mode/fms/libfms.a
@@ -117,6 +135,35 @@ $(BUILD)/%/icebergs/path_names: LIST_PATHS_ARGS = $(ICEBERGS_SRC)/
 $(BUILD)/%/icebergs/Makefile: MKMF_OPTS = -p libicebergs.a -o '-I../fms'
 $(eval $(call compile,icebergs/,libicebergs.a,../../env,fms/libfms.a))
 
+# build/compiler/mode/lm3/liblm3.a
+$(BUILD)/%/lm3/path_names: LIST_PATHS_ARGS = $(LM3_SRC)/
+$(BUILD)/%/lm3/Makefile: MKMF_OPTS = -p liblm3.a -o '-I../fms'
+$(eval $(call compile,lm3/,liblm3.a,../../env,fms/libfms.a))
+
+# build/compiler/mode/ice_param/libice_param.a
+$(BUILD)/%/ice_param/path_names: LIST_PATHS_ARGS = $(ICE_PARAM_SRC)/
+$(BUILD)/%/ice_param/Makefile: MKMF_OPTS = -p libice_param.a -o '-I../fms'
+$(eval $(call compile,ice_param/,libice_param.a,../../env,fms/libfms.a))
+
+# build/compiler/mode/am2/libam2.a
+$(BUILD)/%/am2/path_names: LIST_PATHS_ARGS = $(AM2_SRC)/ $(AM2_SRC)/*/ $(AM2_SRC)/*/*/ $(FMS_SRC)/include/fms_platform.h
+$(BUILD)/%/am2/Makefile: MKMF_OPTS = -p libam2.a -o '-I../fms' -c '$(CPP_DEFS)'
+$(BUILD)/%/am2/Makefile: CPP_DEFS += -DSPMD -Duse_AM3_physics
+$(eval $(call compile,am2/,libam2.a,../../env,fms/libfms.a))
+
+# build/compiler/mode/sis2/libsis2.a
+$(BUILD)/%/sis2/path_names: LIST_PATHS_ARGS += $(SIS2_SRC)/ $(MOM6_SRC)/src/framework/MOM_memory_macros.h
+$(BUILD)/%/sis2/Makefile: MKMF_OPTS = -p libsis2.a -o '-I../../fms -I../mom6 -I../../icebergs -I../../ice_ocean_extras' -c '$(CPP_DEFS)'
+$(eval $(call compile,sis2/,libsis2.a,../../../env,mom6/libmom6.a))
+
+# build/compiler/mode/mom6_memory/mom6/libmom6.a
+$(BUILD)/%/mom6/libmom6.a: MKMF_OPTS = -p libmom6.a -o '-I../../fms' -c '$(CPP_DEFS)'
+$(eval $(call compile,mom6/,libmom6.a,../../../env,))
+
+# build/compiler/mode/mom6_memory/mom6_configuration/MOM6
+$(BUILD)/%/ocean_only/path_names: LIST_PATHS_ARGS = $(MOM6_SRC)/config_src/solo_driver/
+$(eval $(call compile,,MOM6,$$(ENV_SCRIPT),))
+
 # Generate lists of variables and dependencies for SIS2 libraries
 # $(1) = compiler, $(2) = mode, $(3) = memory style, $(4) = mom6 configuration
 define sis2-variables
@@ -127,11 +174,6 @@ $(BUILD)/$(1)/$(2)/$(3)/$(4)/libsis2.a: $(BUILD)/$(1)/$(2)/icebergs/libicebergs.
 .SECONDARY: $(BUILD)/$(1)/$(2)/$(3)/$(4)/libsis2.a
 endef
 $(foreach c,$(COMPILERS),$(foreach m,repro debug coverage,$(foreach d,dynamic dynamic_symmetric,$(foreach o,sis2,$(eval $(call sis2-variables,$(c),$(m),$(d),$(o)))))))
-
-# build/compiler/mode/sis2/libsis2.a
-$(BUILD)/%/sis2/path_names: LIST_PATHS_ARGS += $(SIS2_SRC)/ $(MOM6_SRC)/src/framework/MOM_memory_macros.h
-$(BUILD)/%/sis2/Makefile: MKMF_OPTS = -p libsis2.a -o '-I../../fms -I../mom6 -I../../icebergs -I../../ice_ocean_extras' -c '$(CPP_DEFS)'
-$(eval $(call compile,sis2/,libsis2.a,../../../env,mom6/libmom6.a))
 
 # Generate lists of variables and dependencies for MOM6 libraries
 # $(1) = compiler, $(2) = mode, $(3) = memory style
@@ -144,10 +186,6 @@ $(BUILD)/$(1)/$(2)/$(3)/mom6/libmom6.a: $(BUILD)/$(1)/$(2)/fms/libfms.a
 .SECONDARY: $(BUILD)/$(1)/$(2)/$(3)/mom6/libmom6.a
 endef
 $(foreach c,$(COMPILERS),$(foreach m,repro debug coverage,$(foreach d,dynamic dynamic_symmetric,$(eval $(call libmom6-variables,$(c),$(m),$(d))))))
-
-# build/compiler/mode/mom6_memory/mom6/libmom6.a
-$(BUILD)/%/mom6/libmom6.a: MKMF_OPTS = -p libmom6.a -o '-I../../fms' -c '$(CPP_DEFS)'
-$(eval $(call compile,mom6/,libmom6.a,../../../env,))
 
 # Generate lists of variables and dependencies for MOM6 executables
 # $(1) = compiler, $(2) = mode, $(3) = memory style, $(4) = mom6 configuration
@@ -178,7 +216,6 @@ $(BUILD)/$(1)/$(2)/$(3)/$(4)/%/Makefile: LIBS += -L../../../fms -lfms
 $(BUILD)/$(1)/$(2)/$(3)/$(4)/%/MOM6: $(BUILD)/$(1)/$(2)/fms/libfms.a
 $(BUILD)/$(1)/$(2)/$(3)/$(4)/%/MOM6: ENV_SCRIPT = ../../../../env
 endef
-#$(foreach c,$(COMPILERS),$(foreach m,repro debug coverage,$(foreach o,DOME double_gyre global nonBous_global,$(eval $(call mom6-static-variables,$(c),$(m),static,ocean_only/$(o))))))
 $(foreach c,$(COMPILERS),$(foreach m,repro debug coverage,$(foreach o,ocean_only,$(eval $(call mom6-static-variables,$(c),$(m),static,$(o))))))
 
 define mom6-sis2-variables
@@ -214,75 +251,53 @@ $(BUILD)/$(1)/$(2)/$(3)/$(4)/MOM6: ENV_SCRIPT = ../../../env
 endef
 $(foreach c,$(COMPILERS),$(foreach m,repro debug coverage,$(foreach d,dynamic dynamic_symmetric,$(foreach o,coupled_LM3_SIS2,$(eval $(call mom6-am2-variables,$(c),$(m),$(d),$(o)))))))
 
-# build/compiler/mode/mom6_memory/mom6_configuration/MOM6
-# compiler = gnu, intel, pgi, cray, ...
-# mode = repro, debug, coverage, ...
-# mom6_memory = dynamic, dynamic_symmetric, static
-# mom6_configuration = ocean_only, ice_ocean_SIS, ice_ocean_SIS2, land_ice_ocean_LM3_SIS2, coupled_AM2_LM3_SIS, coupled_AM2_LM3_SIS2
-# mom6_configuration = ocean_only/DOME ocean_only/benchmark ocean_only/double_gyre ...
-#compiler = $(word 2,$(call slash_to_list, $(1)))
-#mode = $(word 3,$(call slash_to_list, $(1)))
-#mom6_memory = $(word 4,$(call slash_to_list, $(1)))
-#mom6_configuration = $(word 5,$(call slash_to_list, $(1)))
-$(BUILD)/%/ocean_only/path_names: LIST_PATHS_ARGS = $(MOM6_SRC)/config_src/solo_driver/
-$(eval $(call compile,,MOM6,$$(ENV_SCRIPT),))
-
-# build/compiler/mode/lm3/liblm3.a
-$(BUILD)/%/lm3/path_names: LIST_PATHS_ARGS = $(LM3_SRC)/
-$(BUILD)/%/lm3/Makefile: MKMF_OPTS = -p liblm3.a -o '-I../fms'
-$(eval $(call compile,lm3/,liblm3.a,../../env,fms/libfms.a))
-
-# build/compiler/mode/ice_param/libice_param.a
-$(BUILD)/%/ice_param/path_names: LIST_PATHS_ARGS = $(ICE_PARAM_SRC)/
-$(BUILD)/%/ice_param/Makefile: MKMF_OPTS = -p libice_param.a -o '-I../fms'
-$(eval $(call compile,ice_param/,libice_param.a,../../env,fms/libfms.a))
-
-# build/compiler/mode/am2/libam2.a
-$(BUILD)/%/am2/path_names: LIST_PATHS_ARGS = $(AM2_SRC)/ $(AM2_SRC)/*/ $(AM2_SRC)/*/*/ $(FMS_SRC)/include/fms_platform.h
-$(BUILD)/%/am2/Makefile: MKMF_OPTS = -p libam2.a -o '-I../fms' -c '$(CPP_DEFS)'
-$(BUILD)/%/am2/Makefile: CPP_DEFS += -DSPMD -Duse_AM3_physics
-$(eval $(call compile,am2/,libam2.a,../../env,fms/libfms.a))
-
-############## Below here is for development of the script
 # Rules for cloning
+clone: MOM6-examples
+clone_all: $(ICE_PARAM_SRC) $(ATMOS_PARAM_SRC) $(SIS1_SRC) $(LM3_SRC) $(AM2_REPOS) MOM6-examples/.datasets
+# MOM6-examples/src/mkmf MOM6-examples/src/atmos_null MOM6-examples/src/coupler MOM6-examples/src/MOM6 MOM6-examples/src/icebergs MOM6-examples/src/land_null MOM6-examples/src/SIS2 MOM6-examples/src/FMS
 MOM6-examples $(SRC_DIR):
-	git clone --recursive https://github.com/NOAA-GFDL/MOM6-examples.git
-ICE_PARAM_SRC=$(SRC_DIR)/ice_param
-ATMOS_PARAM_SRC=$(SRC_DIR)/atmos_param_am3
-LM3_SRC=$(LM3)/land_param $(LM3)/land_lad2_cpp
-AM2_SRC=$(AM2)/atmos_drivers/coupled $(AM2)/atmos_fv_dynamics/driver/coupled $(AM2)/atmos_fv_dynamics/model $(AM2)/atmos_fv_dynamics/tools $(AM2)/atmos_shared_am3 $(ATMOS_PARAM_SRC)
-LM3=$(SRC_DIR)/LM3
-LM3_REPOS=$(LM3)/land_param $(LM3)/land_lad2
-AM2=$(SRC_DIR)/AM2
-AM2_REPOS=$(AM2)/atmos_drivers $(AM2)/atmos_fv_dynamics $(AM2)/atmos_shared_am3
-FMS_tag = prerelease_warsaw_20170330
-$(ICE_PARAM_SRC) $(ATMOS_PARAM_SRC) $(AM2_REPOS) $(LM3)/land_param: | $(SRC_DIR)
-	(cd $(@D); git clone http://gitlab.gfdl.noaa.gov/fms/$(@F).git)
-	(cd $@; git checkout $(FMS_tag))
-$(SIS1_SRC): | $(SRC_DIR)
-	(cd $(@D); git clone http://gitlab.gfdl.noaa.gov/fms/ice_sis.git $(@F))
-	(cd $@; git checkout $(FMS_tag))
-$(LM3)/land_param: | $(LM3)
-$(LM3)/land_lad2: | $(LM3)
-	(cd $(@D); git clone http://gitlab.gfdl.noaa.gov/fms/land_lad2.git)
-	(cd $@; git checkout $(LM3_tag))
-	@make -n cppLM3
-	@(make -s cppLM3) 2>&1 1> /dev/null
-cppLM3: $(LM3_REPOS)
+	test -d MOM6-examples && (cd MOM6-examples; git fetch) || git clone --recursive https://github.com/NOAA-GFDL/MOM6-examples.git
+MOM6-examples/.datasets: /lustre/f1/pdata/gfdl_O/datasets | MOM6-examples
+	cd $(@D); ln -s $< $(@F)
+$(SRC_DIR)/AM2/atmos_shared_am3: URL = http://gitlab.gfdl.noaa.gov/fms/atmos_shared_am3.git
+$(SRC_DIR)/AM2/atmos_shared_am3: TAG = prerelease_warsaw_20170330
+$(SRC_DIR)/AM2/atmos_drivers: URL = http://gitlab.gfdl.noaa.gov/fms/atmos_drivers.git
+$(SRC_DIR)/AM2/atmos_drivers: TAG = prerelease_warsaw_20170330
+$(SRC_DIR)/AM2/atmos_fv_dynamics: URL = http://gitlab.gfdl.noaa.gov/fms/atmos_fv_dynamics.git
+$(SRC_DIR)/AM2/atmos_fv_dynamics: TAG = prerelease_warsaw_20170330
+$(SRC_DIR)/SIS: URL = http://gitlab.gfdl.noaa.gov/fms/ice_sis.git
+$(SRC_DIR)/SIS: TAG = prerelease_warsaw_20170330
+$(SRC_DIR)/LM3/land_param: URL = http://gitlab.gfdl.noaa.gov/fms/land_param.git
+$(SRC_DIR)/LM3/land_param: TAG = prerelease_warsaw_20170330
+$(SRC_DIR)/LM3/land_lad2: URL = http://gitlab.gfdl.noaa.gov/fms/land_lad2.git
+$(SRC_DIR)/LM3/land_lad2: TAG = verona_201701
+$(SRC_DIR)/atmos_param_am3: URL = http://gitlab.gfdl.noaa.gov/fms/atmos_param_am3.git
+$(SRC_DIR)/atmos_param_am3: TAG = prerelease_warsaw_20170330
+$(SRC_DIR)/ice_param: URL = http://gitlab.gfdl.noaa.gov/fms/ice_param.git
+$(SRC_DIR)/ice_param: TAG = prerelease_warsaw_20170330
+$(SRC_DIR)/sis1: URL = http://gitlab.gfdl.noaa.gov/fms/ice_sis.git
+$(SRC_DIR)/sis1: TAG = prerelease_warsaw_20170330
+$(foreach r,AM2/atmos_shared_am3 AM2/atmos_drivers AM2/atmos_fv_dynamics sis1 LM3/land_param LM3/land_lad2 atmos_param_am3 ice_param,$(SRC_DIR)/$(r)): | $(SRC_DIR)
+	test -d $@ && (cd $@; git fetch) || git clone $(CLONE_OPTS) $(URL) $@
+	cd $@; git checkout $(TAG)
+$(SRC_DIR)/LM3/land_lad2_cpp: $(SRC_DIR)/LM3/land_lad2
 	find $(LM3)/land_lad2 -type f -name \*.F90 -exec cpp -Duse_libMPI -Duse_netCDF -DSPMD -Duse_LARGEFILE -C -v -I $(FMS_SRC)/include -o '{}'.cpp {} \;
 	find $(LM3)/land_lad2 -type f -name \*.F90.cpp -exec rename .F90.cpp .f90 {} \;
 	mkdir -p $(LM3)/land_lad2_cpp
 	find $(LM3)/land_lad2 -type f -name \*.f90 -exec mv {} $(LM3)/land_lad2_cpp/ \;
-$(AM2_REPOS): | $(AM2)
-MOM6-examples/.datasets: /lustre/f1/pdata/gfdl_O/datasets | MOM6-examples
-	(cd $(@D); ln -s $< $(@F))
-$(AM2) $(LM3): | $(SRC_DIR)
-	mkdir -p $@
-clone_dev: $(ICE_PARAM_SRC) $(ATMOS_PARAM_SRC) $(SIS1_SRC) $(LM3_REPOS) $(AM2_REPOS) MOM6-examples/.datasets
 
-whats_built:
+# Convenience targets
+what:
 	find $(BUILD) -name "MOM6" -o -name "lib*.a"
+versions:
+	find $(SRC_DIR) -name .git -printf "%h\n" | xargs -L 1 bash -c 'cd "$$0" && git remote -v | grep fetch && git status | grep -v "directory clean" && echo '
 
+# For testing this Makefile
+# gaea12
+# clone_dev 1m30s
+# test -j 4m15s
+# test2 -j 11m10s
+# test3 -j 31m50s
 test: \
 build/gnu/repro/dynamic/ocean_only/MOM6 \
 build/gnu/repro/dynamic/ice_ocean_SIS2/MOM6 \
