@@ -40,6 +40,7 @@ AM2=$(SRC_DIR)/AM2
 AM2_REPOS=$(AM2)/atmos_drivers $(AM2)/atmos_fv_dynamics $(AM2)/atmos_shared_am3
 CITY_TAG = prerelease_warsaw_20170330
 
+MPIRUN = aprun
 SHELL = bash
 COMPILERS = gnu intel pgi
 HIDE_STDOUT = > log
@@ -249,7 +250,7 @@ $(BUILD)/$(1)/$(2)/$(3)/$(4)/MOM6: ENV_SCRIPT = ../../../env
 .SECONDARY: $(BUILD)/$(1)/$(2)/$(3)/$(4)/path_names
 .SECONDARY: $(BUILD)/$(1)/$(2)/$(3)/$(4)/Makefile
 endef
-$(foreach c,$(COMPILERS),$(foreach m,repro debug coverage,$(foreach d,dynamic dynamic_symmetric,$(foreach o,coupled_LM3_SIS2,$(eval $(call mom6-am2-variables,$(c),$(m),$(d),$(o)))))))
+$(foreach c,$(COMPILERS),$(foreach m,repro debug coverage,$(foreach d,dynamic dynamic_symmetric,$(foreach o,coupled_AM2_LM3_SIS2,$(eval $(call mom6-am2-variables,$(c),$(m),$(d),$(o)))))))
 
 # Rules for cloning
 clone: MOM6-examples
@@ -292,6 +293,17 @@ what:
 versions:
 	find $(SRC_DIR) -name .git -printf "%h\n" | xargs -L 1 bash -c 'cd "$$0" && git remote -v | grep fetch && git status | grep -v "directory clean" && echo '
 
+# Running
+include manifest.mk
+
+define run-model
+$(CONFIGS)/$(2)/%/ocean.stats.$(1): $(BUILD)/gnu/repro/dynamic/$(2)/MOM6
+	echo $$@ , $$^, $$(NPES)
+	cd $$(@D) && rm -rf Depth_list.nc CPU_stats.$(1) time_stamp.out $$(@F) RESTART && mkdir RESTART
+	cd $$(@D) && OMP_NUM_THREADS=1 KMP_STACKSIZE=512m NC_BLKSZ=1M echo time $(MPIRUN) -n $$(NPES) $$(call rel_path,$$(@D))$$<
+endef
+$(foreach c,gnu intel pgi,$(foreach o,ocean_only ice_ocean_SIS2,$(eval $(call run-model,$(c),$(o)))))
+
 # For testing this Makefile
 # gaea12
 # clone_dev 1m30s
@@ -301,10 +313,10 @@ versions:
 test: \
 build/gnu/repro/dynamic/ocean_only/MOM6 \
 build/gnu/repro/dynamic/ice_ocean_SIS2/MOM6 \
-build/gnu/repro/dynamic/coupled_LM3_SIS2/MOM6 \
+build/gnu/repro/dynamic/coupled_AM2_LM3_SIS2/MOM6 \
 build/gnu/repro/dynamic_symmetric/ocean_only/MOM6 \
 build/gnu/repro/dynamic_symmetric/ice_ocean_SIS2/MOM6 \
-build/gnu/repro/dynamic_symmetric/coupled_LM3_SIS2/MOM6
+build/gnu/repro/dynamic_symmetric/coupled_AM2_LM3_SIS2/MOM6
 
 test1: \
 build/gnu/repro/static/ocean_only/double_gyre/MOM6
@@ -312,15 +324,15 @@ build/gnu/repro/static/ocean_only/double_gyre/MOM6
 test2: \
 build/intel/repro/dynamic/ocean_only/MOM6 \
 build/intel/repro/dynamic/ice_ocean_SIS2/MOM6 \
-build/intel/repro/dynamic/coupled_LM3_SIS2/MOM6 \
+build/intel/repro/dynamic/coupled_AM2_LM3_SIS2/MOM6 \
 build/intel/repro/dynamic_symmetric/ocean_only/MOM6 \
 build/intel/repro/dynamic_symmetric/ice_ocean_SIS2/MOM6 \
-build/intel/repro/dynamic_symmetric/coupled_LM3_SIS2/MOM6
+build/intel/repro/dynamic_symmetric/coupled_AM2_LM3_SIS2/MOM6
 
 test3: \
 build/pgi/repro/dynamic/ocean_only/MOM6 \
 build/pgi/repro/dynamic/ice_ocean_SIS2/MOM6 \
-build/pgi/repro/dynamic/coupled_LM3_SIS2/MOM6 \
+build/pgi/repro/dynamic/coupled_AM2_LM3_SIS2/MOM6 \
 build/pgi/repro/dynamic_symmetric/ocean_only/MOM6 \
 build/pgi/repro/dynamic_symmetric/ice_ocean_SIS2/MOM6 \
-build/pgi/repro/dynamic_symmetric/coupled_LM3_SIS2/MOM6
+build/pgi/repro/dynamic_symmetric/coupled_AM2_LM3_SIS2/MOM6
