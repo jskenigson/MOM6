@@ -1,3 +1,5 @@
+MOM6-examples: URL = https://github.com/NOAA-GFDL/MOM6-examples.git
+MOM6-examples: TAG = dev/master
 MOM6-examples/ocean_only/unit_tests/ocean.stats.%: NPES=1
 MOM6-examples/ocean_only/torus_advection_test/ocean.stats.%: NPES=2
 MOM6-examples/ocean_only/double_gyre/ocean.stats.%: NPES=8

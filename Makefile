@@ -253,11 +253,10 @@ endef
 $(foreach c,$(COMPILERS),$(foreach m,repro debug coverage,$(foreach d,dynamic dynamic_symmetric,$(foreach o,coupled_AM2_LM3_SIS2,$(eval $(call mom6-am2-variables,$(c),$(m),$(d),$(o)))))))
 
 # Rules for cloning
-clone: MOM6-examples
-clone_all: $(ICE_PARAM_SRC) $(ATMOS_PARAM_SRC) $(SIS1_SRC) $(LM3_SRC) $(AM2_REPOS) MOM6-examples/.datasets
-# MOM6-examples/src/mkmf MOM6-examples/src/atmos_null MOM6-examples/src/coupler MOM6-examples/src/MOM6 MOM6-examples/src/icebergs MOM6-examples/src/land_null MOM6-examples/src/SIS2 MOM6-examples/src/FMS
-MOM6-examples $(SRC_DIR):
-	test -d MOM6-examples && (cd MOM6-examples; git fetch) || git clone --recursive https://github.com/NOAA-GFDL/MOM6-examples.git
+clone: $(CONFIGS)
+clone_gfdl: $(CONFIGS) $(ICE_PARAM_SRC) $(ATMOS_PARAM_SRC) $(SIS1_SRC) $(LM3_SRC) $(AM2_REPOS) MOM6-examples/.datasets
+$(CONFIGS) $(SRC_DIR):
+	test -d $(CONFIGS) && (cd $(CONFIGS) git fetch) || git clone --recursive $(URL) $(CONFIGS)
 MOM6-examples/.datasets: /lustre/f1/pdata/gfdl_O/datasets | MOM6-examples
 	cd $(@D); ln -s $< $(@F)
 $(SRC_DIR)/AM2/atmos_shared_am3: URL = http://gitlab.gfdl.noaa.gov/fms/atmos_shared_am3.git
