@@ -43,7 +43,7 @@ CITY_TAG = prerelease_warsaw_20170330
 MPIRUN = aprun
 SHELL = bash
 COMPILERS = gnu intel pgi
-HIDE_STDOUT = > log
+LOG = > log
 
 # Converts a path a/b/c to a list "a b c"
 slash_to_list = $(subst /, ,$(1))
@@ -62,14 +62,14 @@ $(foreach c, $(COMPILERS),$(foreach m,repro debug coverage,$(eval $(call make-en
 ifeq ($(SITE),ncrc)
 $(BUILD)/gnu/env:
 	mkdir -p $(@D)
-	#echo 'module unload PrgEnv-intel netcdf ; module load gcc/4.9.3 PrgEnv-gnu cray-netcdf' > $@
-	echo 'module unload PrgEnv-pgi PrgEnv-intel PrgEnv-gnu ; module load gcc/4.9.3; module load PrgEnv-gnu; module unload netcdf; module load cray-netcdf' > $@
+	#echo 'module unload PrgEnv-intel netcdf ; module load gcc/4.9.3 PrgEnv-gnu cray-hdf5 cray-netcdf' > $@
+	echo 'module unload PrgEnv-pgi PrgEnv-intel PrgEnv-gnu ; module load gcc/4.9.3; module load PrgEnv-gnu; module unload netcdf; module load cray-hdf5 cray-netcdf' > $@
 $(BUILD)/intel/env:
 	mkdir -p $(@D)
-	echo 'module load PrgEnv-intel; module unload netcdf; module load cray-netcdf' > $@
+	echo 'module load PrgEnv-intel; module unload netcdf; module load cray-hdf5 cray-netcdf' > $@
 $(BUILD)/pgi/env:
 	mkdir -p $(@D)
-	echo 'module unload PrgEnv-intel ; module load PrgEnv-pgi; module unload netcdf; module load cray-netcdf' > $@
+	echo 'module unload PrgEnv-intel ; module load PrgEnv-pgi; module unload netcdf; module load cray-hdf5 cray-netcdf' > $@
 endif
 
 # path_names:
@@ -77,14 +77,14 @@ endif
 $(BUILD)/%/path_names: $(wildcard $(LIST_PATHS_ARGS)*) $(wildcard $(LIST_PATHS_ARGS)*/*) $(wildcard $(LIST_PATHS_ARGS)*/*/*) $(wildcard $(LIST_PATHS_ARGS)*/*/*/*)
 $(BUILD)/%/path_names: Makefile
 	mkdir -p $(@D)
-	cd $(@D); rm -f path_names; $(call rel_path,$(@D))$(LIST_PATHS) $(foreach p,$(LIST_PATHS_ARGS),$(call rel_path,$(@D))$(p)) $(HIDE_STDOUT)
+	cd $(@D); rm -f path_names; $(call rel_path,$(@D))$(LIST_PATHS) $(foreach p,$(LIST_PATHS_ARGS),$(call rel_path,$(@D))$(p)) $(LOG)
 
 # Makefile:
 # - must have MKMF_OPTS set for final target
 # fms_compiler = gnu, intel, pgi, cray, ...
 fms_compiler = $(word 2,$(call slash_to_list, $(1)))
 $(BUILD)/%/Makefile: $(BUILD)/%/path_names
-	cd $(@D); $(call rel_path,$(@D))$(MKMF) -t $(call rel_path,$(@D))$(MKMF_SRC)/templates/$(SITE)-$(call fms_compiler,$@).mk $(MKMF_OPTS) path_names $(HIDE_STDOUT) 2>&1
+	cd $(@D); $(call rel_path,$(@D))$(MKMF) -t $(call rel_path,$(@D))$(MKMF_SRC)/templates/$(SITE)-$(call fms_compiler,$@).mk $(MKMF_OPTS) path_names $(LOG) 2>&1
 
 # Keep path_names, makefiles and libraries
 define secondaries
@@ -102,8 +102,9 @@ define compile
 $(BUILD)/%/$(1)$(2): $(BUILD)/%/$(1)Makefile $(foreach l,$(4),$(BUILD)/%/$(l))
 	rm -f $$@
 	@echo Building $$@
-	cd $$(@D); source $(3) && make NETCDF=3 $$(call make_args, $$(call fms_mode, $$@)) $$(@F) $(HIDE_STDOUT)
+	cd $$(@D); source $(3) && make NETCDF=3 $$(call make_args, $$(call fms_mode, $$@)) $$(@F) $(LOG)
 endef
+#cd $$(@D); source $(3) && HDF5_DISABLE_VERSION_CHECK=2 make NETCDF=3 $$(call make_args, $$(call fms_mode, $$@)) $$(@F) $(LOG)
 
 # build/compiler/mode/fms/libfms.a
 $(BUILD)/%/fms/path_names: LIST_PATHS_ARGS = $(FMS_SRC)/
@@ -127,9 +128,9 @@ $(eval $(call compile,land_null/,libland_null.a,../../env,fms/libfms.a ice_ocean
 
 # build/compiler/mode/coupler/libcoupler.a
 $(BUILD)/%/coupler/path_names: LIST_PATHS_ARGS = $(COUPLER_SRC)/
-$(BUILD)/%/coupler/Makefile: MKMF_OPTS = -p libcoupler.a -o '-I../fms -I../ice_ocean_extras -I../atmos_null -I../land_null -I../dynamic/mom6 -I../dynamic/sis2' -c '$(CPP_DEFS)'
+$(BUILD)/%/coupler/Makefile: MKMF_OPTS = -p libcoupler.a -o '-I../fms -I../ice_ocean_extras -I../atmos_null -I../land_null -I../dynamic/mom6 -I../dynamic/sis2 -I../icebergs' -c '$(CPP_DEFS)'
 $(BUILD)/%/coupler/Makefile: CPP_DEFS = -Duse_AM3_physics
-$(eval $(call compile,coupler/,libcoupler.a,../../env,fms/libfms.a ice_ocean_extras/libice_ocean_extras.a atmos_null/libatmos_null.a land_null/libland_null.a dynamic/sis2/libsis2.a dynamic/mom6/libmom6.a))
+$(eval $(call compile,coupler/,libcoupler.a,../../env,fms/libfms.a ice_ocean_extras/libice_ocean_extras.a atmos_null/libatmos_null.a land_null/libland_null.a dynamic/sis2/libsis2.a icebergs/libicebergs.a dynamic/mom6/libmom6.a))
 
 # build/compiler/mode/icebergs/libicebergs.a
 $(BUILD)/%/icebergs/path_names: LIST_PATHS_ARGS = $(ICEBERGS_SRC)/
@@ -270,7 +271,8 @@ $(SRC_DIR)/SIS: TAG = prerelease_warsaw_20170330
 $(SRC_DIR)/LM3/land_param: URL = http://gitlab.gfdl.noaa.gov/fms/land_param.git
 $(SRC_DIR)/LM3/land_param: TAG = prerelease_warsaw_20170330
 $(SRC_DIR)/LM3/land_lad2: URL = http://gitlab.gfdl.noaa.gov/fms/land_lad2.git
-$(SRC_DIR)/LM3/land_lad2: TAG = verona_201701
+$(SRC_DIR)/LM3/land_lad2: TAG = warsaw_20170428_slm
+#verona_201701
 $(SRC_DIR)/atmos_param_am3: URL = http://gitlab.gfdl.noaa.gov/fms/atmos_param_am3.git
 $(SRC_DIR)/atmos_param_am3: TAG = prerelease_warsaw_20170330
 $(SRC_DIR)/ice_param: URL = http://gitlab.gfdl.noaa.gov/fms/ice_param.git
@@ -280,8 +282,9 @@ $(SRC_DIR)/sis1: TAG = prerelease_warsaw_20170330
 $(foreach r,AM2/atmos_shared_am3 AM2/atmos_drivers AM2/atmos_fv_dynamics sis1 LM3/land_param LM3/land_lad2 atmos_param_am3 ice_param,$(SRC_DIR)/$(r)): | $(SRC_DIR)
 	test -d $@ && (cd $@; git fetch) || git clone $(CLONE_OPTS) $(URL) $@
 	cd $@; git checkout $(TAG)
+#find $(LM3)/land_lad2 -type f -name \*.F90 -exec cpp -Duse_libMPI -Duse_netCDF -DSPMD -Duse_LARGEFILE -C -v -I $(FMS_SRC)/include -o '{}'.cpp {} \;
 $(SRC_DIR)/LM3/land_lad2_cpp: $(SRC_DIR)/LM3/land_lad2
-	find $(LM3)/land_lad2 -type f -name \*.F90 -exec cpp -Duse_libMPI -Duse_netCDF -DSPMD -Duse_LARGEFILE -C -v -I $(FMS_SRC)/include -o '{}'.cpp {} \;
+	find $(LM3)/land_lad2 -type f -name \*.F90 -exec cpp -Duse_libMPI -Duse_netCDF -nostdinc -C -v -I $(FMS_SRC)/include -o '{}'.cpp {} \;
 	find $(LM3)/land_lad2 -type f -name \*.F90.cpp -exec rename .F90.cpp .f90 {} \;
 	mkdir -p $(LM3)/land_lad2_cpp
 	find $(LM3)/land_lad2 -type f -name \*.f90 -exec mv {} $(LM3)/land_lad2_cpp/ \;
@@ -293,7 +296,7 @@ versions:
 	find $(SRC_DIR) -name .git -printf "%h\n" | xargs -L 1 bash -c 'cd "$$0" && git remote -v | grep fetch && git status | grep -v "directory clean" && echo '
 
 # Running
-include manifest.mk
+-include manifest.mk
 
 define run-model
 $(CONFIGS)/$(2)/%/ocean.stats.$(1): $(BUILD)/gnu/repro/dynamic/$(2)/MOM6
@@ -309,29 +312,8 @@ $(foreach c,gnu intel pgi,$(foreach o,ocean_only ice_ocean_SIS2,$(eval $(call ru
 # test -j 4m15s
 # test2 -j 11m10s
 # test3 -j 31m50s
-test: \
-build/gnu/repro/dynamic/ocean_only/MOM6 \
-build/gnu/repro/dynamic/ice_ocean_SIS2/MOM6 \
-build/gnu/repro/dynamic/coupled_AM2_LM3_SIS2/MOM6 \
-build/gnu/repro/dynamic_symmetric/ocean_only/MOM6 \
-build/gnu/repro/dynamic_symmetric/ice_ocean_SIS2/MOM6 \
-build/gnu/repro/dynamic_symmetric/coupled_AM2_LM3_SIS2/MOM6
+build_gnu: $(foreach m,dynamic dynamic_symmetric,$(foreach e,ocean_only ice_ocean_SIS2 coupled_AM2_LM3_SIS2,$(BUILD)/gnu/repro/$(m)/$(e)/MOM6))
+build_intel: $(foreach m,dynamic dynamic_symmetric,$(foreach e,ocean_only ice_ocean_SIS2 coupled_AM2_LM3_SIS2,$(BUILD)/intel/repro/$(m)/$(e)/MOM6))
+build_pgi: $(foreach m,dynamic dynamic_symmetric,$(foreach e,ocean_only ice_ocean_SIS2 coupled_AM2_LM3_SIS2,$(BUILD)/pgi/repro/$(m)/$(e)/MOM6))
 
-test1: \
-build/gnu/repro/static/ocean_only/double_gyre/MOM6
-
-test2: \
-build/intel/repro/dynamic/ocean_only/MOM6 \
-build/intel/repro/dynamic/ice_ocean_SIS2/MOM6 \
-build/intel/repro/dynamic/coupled_AM2_LM3_SIS2/MOM6 \
-build/intel/repro/dynamic_symmetric/ocean_only/MOM6 \
-build/intel/repro/dynamic_symmetric/ice_ocean_SIS2/MOM6 \
-build/intel/repro/dynamic_symmetric/coupled_AM2_LM3_SIS2/MOM6
-
-test3: \
-build/pgi/repro/dynamic/ocean_only/MOM6 \
-build/pgi/repro/dynamic/ice_ocean_SIS2/MOM6 \
-build/pgi/repro/dynamic/coupled_AM2_LM3_SIS2/MOM6 \
-build/pgi/repro/dynamic_symmetric/ocean_only/MOM6 \
-build/pgi/repro/dynamic_symmetric/ice_ocean_SIS2/MOM6 \
-build/pgi/repro/dynamic_symmetric/coupled_AM2_LM3_SIS2/MOM6
+test: build_gnu build/gnu/repro/static/ocean_only/double_gyre/MOM6
