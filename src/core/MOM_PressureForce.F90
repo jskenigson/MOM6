@@ -33,6 +33,8 @@ type, public :: PressureForce_CS ; private
                              !! (Adcroft et al., Ocean Mod. 2008) of the PGF.
   logical :: blocked_AFV     !< If true, used the blocked version of the ANALYTIC_FV_PGF
                              !! code.  The value of this parameter should not change answers.
+  real :: Brankart_factor    !< Scaling for mean contribution to Brankart effect.
+  real :: Brankart_noise     !< Scaling for random contribution to Brankart effect.
   !> Control structure for the analytically integrated finite volume pressure force
   type(PressureForce_AFV_CS), pointer :: PressureForce_AFV_CSp => NULL()
   !> Control structure for the analytically integrated finite volume pressure force
@@ -66,29 +68,51 @@ subroutine PressureForce(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_atm, pbce, e
   real, dimension(SZI_(G),SZJ_(G)), &
                  optional, intent(out) :: eta  !< The bottom mass used to calculate PFu and PFv,
                                                !! in H, with any tidal contributions.
+  ! Local variables
+  type(thermo_var_ptrs) :: tv_tmp ! A temporary work space for spoofing T and S
+  real, dimension(SZI_(G),SZJ_(G),SZK_(G)), target :: Ttmp, Stmp ! Alternatives for T and S
+  real, dimension(SZIB_(G),SZJ_(G),SZK_(G)) :: PFu2 ! Alternative PFu
+  real, dimension(SZI_(G),SZJB_(G),SZK_(G)) :: PFv2 ! Alternative PFv
+  real, dimension(SZI_(G),SZJ_(G),SZK_(G)) :: pbce2 ! Alternative pbce
+  real, dimension(SZI_(G),SZJ_(G)) :: eta2 ! Alternative eta
+  logical :: do_Brankart
+
+  tv_tmp%eqn_of_state => tv%eqn_of_state
+  tv_tmp%P_ref = tv%P_ref
+  do_Brankart = .false.
+  if (CS%Brankart_factor>0.) then
+    do_Brankart = .true.
+    tv_tmp%T => Ttmp
+    tv_tmp%S => Stmp
+    Ttmp(:,:,:) = tv%T(:,:,:)
+    Stmp(:,:,:) = tv%S(:,:,:)
+  else
+    tv_tmp%T => tv%T
+    tv_tmp%S => tv%S
+  endif
 
   if (CS%Analytic_FV_PGF .and. CS%blocked_AFV) then
     if (GV%Boussinesq) then
-      call PressureForce_blk_AFV_Bouss(h, tv, PFu, PFv, G, GV, US, &
+      call PressureForce_blk_AFV_Bouss(h, tv_tmp, PFu, PFv, G, GV, US, &
                CS%PressureForce_blk_AFV_CSp, ALE_CSp, p_atm, pbce, eta)
     else
-      call PressureForce_blk_AFV_nonBouss(h, tv, PFu, PFv, G, GV, US, &
+      call PressureForce_blk_AFV_nonBouss(h, tv_tmp, PFu, PFv, G, GV, US, &
                CS%PressureForce_blk_AFV_CSp, p_atm, pbce, eta)
     endif
   elseif (CS%Analytic_FV_PGF) then
     if (GV%Boussinesq) then
-      call PressureForce_AFV_Bouss(h, tv, PFu, PFv, G, GV, US, CS%PressureForce_AFV_CSp, &
+      call PressureForce_AFV_Bouss(h, tv_tmp, PFu, PFv, G, GV, US, CS%PressureForce_AFV_CSp, &
                                    ALE_CSp, p_atm, pbce, eta)
     else
-      call PressureForce_AFV_nonBouss(h, tv, PFu, PFv, G, GV, US, CS%PressureForce_AFV_CSp, &
+      call PressureForce_AFV_nonBouss(h, tv_tmp, PFu, PFv, G, GV, US, CS%PressureForce_AFV_CSp, &
                                       ALE_CSp, p_atm, pbce, eta)
     endif
   else
     if (GV%Boussinesq) then
-      call PressureForce_Mont_Bouss(h, tv, PFu, PFv, G, GV, US, CS%PressureForce_Mont_CSp, &
+      call PressureForce_Mont_Bouss(h, tv_tmp, PFu, PFv, G, GV, US, CS%PressureForce_Mont_CSp, &
                                     p_atm, pbce, eta)
     else
-      call PressureForce_Mont_nonBouss(h, tv, PFu, PFv, G, GV, US, CS%PressureForce_Mont_CSp, &
+      call PressureForce_Mont_nonBouss(h, tv_tmp, PFu, PFv, G, GV, US, CS%PressureForce_Mont_CSp, &
                                        p_atm, pbce, eta)
     endif
   endif
@@ -126,6 +150,16 @@ subroutine PressureForce_init(Time, G, GV, US, param_file, diag, CS, tides_CSp)
                  "If true, used the blocked version of the ANALYTIC_FV_PGF \n"//&
                  "code.  The value of this parameter should not change answers.", &
                  default=.false., do_not_log=.true., debuggingParam=.true.)
+  call get_param(param_file, mdl, "BRANKART_FACTOR", CS%Brankart_factor, &
+                 "A non-dimensional coefficient to multiply local\n"//&
+                 "T/S differences when incorporating unresolved\n"//&
+                 "perturbations in the mean density.", default=0., units='nondom', do_not_log=.true.)
+  call get_param(param_file, mdl, "BRANKART_NOISE", CS%Brankart_noise, &
+                 "Amplitude of stochastic contribution to\n"//&
+                 "T/S differences representing unresolved\n"//&
+                 "perturbations in the mean density.", default=0., units='nondom', do_not_log=.true.)
+  if (CS%Brankart_noise /= 0.) call MOM_error(FATAL, "interpret_eos_selection: "//&
+                 "Brankart noise not implemented yet!")
 
   if (CS%Analytic_FV_PGF .and. CS%blocked_AFV) then
     call PressureForce_blk_AFV_init(Time, G, GV, US, param_file, diag, &
