@@ -3,7 +3,8 @@ module MOM_PressureForce
 
 ! This file is part of MOM6. See LICENSE.md for the license.
 
-use MOM_diag_mediator, only : diag_ctrl, time_type
+use MOM_diag_mediator, only : diag_ctrl, time_type, post_data, register_diag_field
+use MOM_EOS, only : calculate_density
 use MOM_error_handler, only : MOM_error, MOM_mesg, FATAL, WARNING, is_root_pe
 use MOM_file_parser, only : get_param, log_version, param_file_type
 use MOM_grid, only : ocean_grid_type
@@ -41,6 +42,11 @@ type, public :: PressureForce_CS ; private
   type(PressureForce_blk_AFV_CS), pointer :: PressureForce_blk_AFV_CSp => NULL()
   !> Control structure for the Montgomery potential form of pressure force
   type(PressureForce_Mont_CS), pointer :: PressureForce_Mont_CSp => NULL()
+  type(diag_ctrl), pointer :: diag !< A structure that is used to regulate the timing of diagnostic output.
+
+  !>@{ Diagnostic IDs
+  integer :: id_brankart_anom = -1
+  !!@}
 end type PressureForce_CS
 
 contains
@@ -71,24 +77,79 @@ subroutine PressureForce(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_atm, pbce, e
   ! Local variables
   type(thermo_var_ptrs) :: tv_tmp ! A temporary work space for spoofing T and S
   real, dimension(SZI_(G),SZJ_(G),SZK_(G)), target :: Ttmp, Stmp ! Alternatives for T and S
+  real, dimension(SZI_(G),SZJ_(G),SZK_(G)) :: delta_T, delta_S ! Differences for T and S
   real, dimension(SZIB_(G),SZJ_(G),SZK_(G)) :: PFu2 ! Alternative PFu
   real, dimension(SZI_(G),SZJB_(G),SZK_(G)) :: PFv2 ! Alternative PFv
   real, dimension(SZI_(G),SZJ_(G),SZK_(G)) :: pbce2 ! Alternative pbce
   real, dimension(SZI_(G),SZJ_(G)) :: eta2 ! Alternative eta
+  real, dimension(SZI_(G),SZJ_(G),SZK_(G)) :: rho1,rho2 ! For diagnostics
   logical :: do_Brankart
 
   tv_tmp%eqn_of_state => tv%eqn_of_state
   tv_tmp%P_ref = tv%P_ref
   do_Brankart = .false.
-  if (CS%Brankart_factor>0.) then
-    do_Brankart = .true.
+  if (CS%Brankart_factor>0.) do_Brankart = .true.
+  if (do_Brankart) then
+    Ttmp(:,:,:) = 0.
+    Stmp(:,:,:) = 0.
+    PFu2(:,:,:) = 0.
+    PFv2(:,:,:) = 0.
+    pbce2(:,:,:) = 0.
+    eta2(:,:) = 0.
+    rho1(:,:,:) = 0.
+    rho2(:,:,:) = 0.
     tv_tmp%T => Ttmp
     tv_tmp%S => Stmp
-    Ttmp(:,:,:) = tv%T(:,:,:)
-    Stmp(:,:,:) = tv%S(:,:,:)
   else
     tv_tmp%T => tv%T
     tv_tmp%S => tv%S
+  endif
+
+  if (do_Brankart) then
+    call lsfit_TS(CS, G, tv, h, tv%T, tv%S, delta_T, delta_S)
+!   Ttmp(:,:,:) = max(-1.9, tv%T(:,:,:) + delta_T(:,:,:) )
+    Stmp(:,:,:) = max(0., tv%S(:,:,:) + delta_S(:,:,:) )
+    Ttmp(:,:,:) = tv%T(:,:,:) + delta_T(:,:,:)
+!   Stmp(:,:,:) = tv%S(:,:,:) + delta_S(:,:,:)
+    if (CS%id_brankart_anom>0) then
+      call density_from_TS(G, GV, tv, h, Ttmp, Stmp, rho1)
+    endif
+    if (CS%Analytic_FV_PGF .and. CS%blocked_AFV) then
+      if (GV%Boussinesq) then
+        call PressureForce_blk_AFV_Bouss(h, tv_tmp, PFu2, PFv2, G, GV, US, &
+                 CS%PressureForce_blk_AFV_CSp, ALE_CSp, p_atm, pbce2, eta2)
+      else
+        call PressureForce_blk_AFV_nonBouss(h, tv_tmp, PFu2, PFv2, G, GV, US, &
+                 CS%PressureForce_blk_AFV_CSp, p_atm, pbce2, eta2)
+      endif
+    elseif (CS%Analytic_FV_PGF) then
+      if (GV%Boussinesq) then
+        call PressureForce_AFV_Bouss(h, tv_tmp, PFu2, PFv2, G, GV, US, CS%PressureForce_AFV_CSp, &
+                                     ALE_CSp, p_atm, pbce2, eta2)
+      else
+        call PressureForce_AFV_nonBouss(h, tv_tmp, PFu2, PFv2, G, GV, US, CS%PressureForce_AFV_CSp, &
+                                        ALE_CSp, p_atm, pbce2, eta2)
+      endif
+    else
+      if (GV%Boussinesq) then
+        call PressureForce_Mont_Bouss(h, tv_tmp, PFu2, PFv2, G, GV, US, CS%PressureForce_Mont_CSp, &
+                                      p_atm, pbce2, eta2)
+      else
+        call PressureForce_Mont_nonBouss(h, tv_tmp, PFu2, PFv2, G, GV, US, CS%PressureForce_Mont_CSp, &
+                                         p_atm, pbce2, eta2)
+      endif
+    endif
+!   Ttmp(:,:,:) = max(-1.9, tv%T(:,:,:) - delta_T(:,:,:) )
+    Stmp(:,:,:) = max(0., tv%S(:,:,:) - delta_S(:,:,:) )
+    Ttmp(:,:,:) = tv%T(:,:,:) - delta_T(:,:,:)
+!   Stmp(:,:,:) = tv%S(:,:,:) - delta_S(:,:,:)
+    if (CS%id_brankart_anom>0) then
+      call density_from_TS(G, GV, tv, h, Ttmp, Stmp, rho2)
+      rho1 = 0.5 * ( rho1(:,:,:) + rho2(:,:,:) ) ! < Brankart density, BAR[ rho(T,S) ]
+      call density_from_TS(G, GV, tv, h, tv%T, tv%S, rho2) ! Normal density rho(BAR[T],BAR[S])
+      rho2 = rho1(:,:,:) - rho2(:,:,:)
+      call post_data(CS%id_brankart_anom, rho2, CS%diag)
+    endif
   endif
 
   if (CS%Analytic_FV_PGF .and. CS%blocked_AFV) then
@@ -117,7 +178,114 @@ subroutine PressureForce(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_atm, pbce, e
     endif
   endif
 
+  if (do_Brankart) then
+    PFu(:,:,:)= 0.5 * ( PFu(:,:,:) + PFu2(:,:,:) )
+    PFv(:,:,:)= 0.5 * ( PFv(:,:,:) + PFv2(:,:,:) )
+    if (present(pbce)) pbce(:,:,:)= 0.5 * ( pbce(:,:,:) + pbce2(:,:,:) )
+    if (present(eta)) eta(:,:)= 0.5 * ( eta(:,:) + eta2(:,:) )
+  endif
+
 end subroutine Pressureforce
+
+!> Calculate a T/S difference for each cell to use in Brankart's density correction
+subroutine lsfit_TS(CS, G, tv, h, T, S, delta_T, delta_S)
+  type(PressureForce_CS), pointer     :: CS !< Pressure force control structure
+  type(ocean_grid_type),  intent(in)  :: G  !< The ocean's grid structure
+  type(thermo_var_ptrs),  intent(in)  :: tv !< A structure pointing to various thermodynamic variables
+  real, dimension(SZI_(G),SZJ_(G),SZK_(G)), intent(in)    :: h       !< Layer thicknesses, in H (usually m or kg m-2)
+  real, dimension(SZI_(G),SZJ_(G),SZK_(G)), intent(in)    :: T       !< Temperature (degC)
+  real, dimension(SZI_(G),SZJ_(G),SZK_(G)), intent(in)    :: S       !< Salinity (1e-3)
+  real, dimension(SZI_(G),SZJ_(G),SZK_(G)), intent(inout) :: delta_T !< Temperature difference (degC)
+  real, dimension(SZI_(G),SZJ_(G),SZK_(G)), intent(inout) :: delta_S !< Salinity difference (1e-3)
+  ! Local variables
+  integer :: i,j,k
+  real :: Tl(5), Sl(5), hl(5) ! Copies of local stencil
+  real :: mn_S, mn_T, mn_S2, mn_ST, mn_T2, vr_S, vr_T, mn_H, cv_ST, sd_S, sd_T
+  real :: dSdT, dTdS, del_T, del_S
+
+  do k = 1, G%ke
+    do j = G%jsc-2,G%jec+2 ; do i = G%isc-2,G%iec+2
+      ! Least squares fit to data in five-point stencil
+      Tl(1) = T(i,j,k) ; Tl(2) = T(i-1,j,k) ; Tl(3) = T(i+1,j,k) ; Tl(4) = T(i,j-1,k) ; Tl(5) = T(i,j+1,k)
+      Sl(1) = S(i,j,k) ; Sl(2) = S(i-1,j,k) ; Sl(3) = S(i+1,j,k) ; Sl(4) = S(i,j-1,k) ; Sl(5) = S(i,j+1,k)
+      hl(1) = h(i,j,k) ; hl(2) = h(i-1,j,k) ; hl(3) = h(i+1,j,k) ; hl(4) = h(i,j-1,k) ; hl(5) = h(i,j+1,k)
+      mn_H = hl(1) + ( ( hl(2) + hl(3) ) + ( hl(4) + hl(5) ) )
+      if (mn_H>0.) mn_H = 1. / mn_H ! Hereafter, mn_H is the reciprocal of mean h for the stencil
+      ! Mean of S,T
+      mn_S = ( hl(1)*Sl(1) + ( ( hl(2)*Sl(2) + hl(3)*Sl(3) ) + ( hl(4)*Sl(4) + hl(5)*Sl(5) ) ) ) * mn_H
+      mn_T = ( hl(1)*Tl(1) + ( ( hl(2)*Tl(2) + hl(3)*Tl(3) ) + ( hl(4)*Tl(4) + hl(5)*Tl(5) ) ) ) * mn_H
+      ! Adjust S,T vectors to have zero mean
+      Sl(:) = Sl(:) - mn_S ; mn_S = 0.
+      Tl(:) = Tl(:) - mn_T ; mn_T = 0.
+      ! Variance of S,T (or mean square error if mean is removed above)
+      mn_S2 = ( hl(1)*Sl(1)*Sl(1) + ( ( hl(2)*Sl(2)*Sl(2) + hl(3)*Sl(3)*Sl(3) ) &
+                                    + ( hl(4)*Sl(4)*Sl(4) + hl(5)*Sl(5)*Sl(5) ) ) ) * mn_H
+      mn_T2 = ( hl(1)*Tl(1)*Tl(1) + ( ( hl(2)*Tl(2)*Tl(2) + hl(3)*Tl(3)*Tl(3) ) &
+                                    + ( hl(4)*Tl(4)*Tl(4) + hl(5)*Tl(5)*Tl(5) ) ) ) * mn_H
+      vr_S = max(0., mn_S2 - mn_S*mn_S) ! Variance should be positive but round-off can violate this. Calculating
+      vr_T = max(0., mn_T2 - mn_T*mn_T) ! variance directly would fix this but require more operations.
+      sd_S = sqrt( vr_S )
+      sd_T = sqrt( vr_T )
+      ! Covariance of S,T
+      mn_ST = ( hl(1)*Sl(1)*Tl(1) + ( ( hl(2)*Sl(2)*Tl(2) + hl(3)*Sl(3)*Tl(3) ) &
+                                    + ( hl(4)*Sl(4)*Tl(4) + hl(5)*Sl(5)*Tl(5) ) ) ) * mn_H
+      cv_ST = mn_ST - mn_S*mn_T
+     !if (vr_T > 0.) then
+     !  del_S = cv_ST / sd_T
+     !  del_T = sd_T
+     !elseif (vr_S > 0.) then
+     !  del_T = cv_ST / sd_S
+     !  del_S = sd_S
+     !else
+     !  del_S = 0.
+     !  del_T = 0.
+     !endif
+      del_T = sd_T
+      del_S = 0.
+      if (cv_ST > 0.) then ! Almost everywhere (esp. along isopycnals) we expect cv_ST<0 so set del_S/del_T with opposite signs
+        if (sd_T > 0.) del_S = min( sd_S, cv_ST/sd_T )
+      elseif (cv_ST < 0.) then
+        if (sd_T > 0.) del_S = max( -sd_S, cv_ST/sd_T )
+      else
+        del_S = 0.
+        del_T = 0.
+      endif
+      delta_S(i,j,k) = del_S * CS%Brankart_factor
+      delta_T(i,j,k) = del_T * CS%Brankart_factor
+    enddo ; enddo
+  enddo
+end subroutine lsfit_TS
+
+!> Calculate a density from an anomalous T/S
+subroutine density_from_TS(G, GV, tv, h, T, S, rho)
+  type(ocean_grid_type),   intent(in)  :: G  !< The ocean's grid structure
+  type(verticalGrid_type), intent(in)  :: GV !< Vertical grid structure
+  type(thermo_var_ptrs),   intent(in)  :: tv !< A structure pointing to various thermodynamic variables
+  real, dimension(SZI_(G),SZJ_(G),SZK_(G)), intent(in)    :: h   !< Layer thicknesses, in H (usually m or kg m-2)
+  real, dimension(SZI_(G),SZJ_(G),SZK_(G)), intent(in)    :: T   !< Temperature (degC)
+  real, dimension(SZI_(G),SZJ_(G),SZK_(G)), intent(in)    :: S   !< Salinity (1e-3)
+  real, dimension(SZI_(G),SZJ_(G),SZK_(G)), intent(inout) :: rho !< Density (kg m-3)
+  ! Local variables
+  integer :: i,j,k,i0,ni
+  real, dimension(SZI_(G)) :: p ! Pressure (Pa)
+
+  i0 = G%isc - G%isd + 1
+  ni = G%iec - G%isc + 1
+  do j = G%jsc,G%jec
+    p(:) = 0.
+    do k = 1, G%ke
+      ! Calculate pressure mid-layer
+      do i = G%isc,G%iec
+        p(i) = p(i) + h(i,j,k) * GV%H_to_Pa * 0.5
+      enddo
+      call calculate_density(T(:,j,k), S(:,j,k), p, rho(:,j,k), i0, ni, tv%eqn_of_state)
+      ! Calculate pressure at bottom of layer to use as the top of the next layer
+      do i = G%isc,G%iec
+        p(i) = p(i) + h(i,j,k) * GV%H_to_Pa * 0.5
+      enddo
+    enddo
+  enddo
+end subroutine density_from_TS
 
 !> Initialize the pressure force control structure
 subroutine PressureForce_init(Time, G, GV, US, param_file, diag, CS, tides_CSp)
@@ -137,6 +305,8 @@ subroutine PressureForce_init(Time, G, GV, US, param_file, diag, CS, tides_CSp)
                             "control structure.")
     return
   else ; allocate(CS) ; endif
+
+  CS%diag => diag
 
   ! Read all relevant parameters and write them to the model log.
   call log_version(param_file, mdl, version, "")
@@ -160,6 +330,10 @@ subroutine PressureForce_init(Time, G, GV, US, param_file, diag, CS, tides_CSp)
                  "perturbations in the mean density.", default=0., units='nondom', do_not_log=.true.)
   if (CS%Brankart_noise /= 0.) call MOM_error(FATAL, "interpret_eos_selection: "//&
                  "Brankart noise not implemented yet!")
+  if (CS%Brankart_factor /= 0.) then
+    CS%id_brankart_anom = register_diag_field('ocean_model', 'Brankart_anom', diag%axesTL, Time, &
+                 'Brankart density anomoly', 'kg m-3')
+  endif
 
   if (CS%Analytic_FV_PGF .and. CS%blocked_AFV) then
     call PressureForce_blk_AFV_init(Time, G, GV, US, param_file, diag, &
