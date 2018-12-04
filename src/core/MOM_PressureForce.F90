@@ -45,7 +45,7 @@ type, public :: PressureForce_CS ; private
   type(diag_ctrl), pointer :: diag !< A structure that is used to regulate the timing of diagnostic output.
 
   !>@{ Diagnostic IDs
-  integer :: id_brankart_anom = -1
+  integer :: id_brankart_anom = -1, id_brankart_pfu = -1, id_brankart_pfv = -1
   !!@}
 end type PressureForce_CS
 
@@ -183,6 +183,41 @@ subroutine PressureForce(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_atm, pbce, e
     PFv(:,:,:)= 0.5 * ( PFv(:,:,:) + PFv2(:,:,:) )
     if (present(pbce)) pbce(:,:,:)= 0.5 * ( pbce(:,:,:) + pbce2(:,:,:) )
     if (present(eta)) eta(:,:)= 0.5 * ( eta(:,:) + eta2(:,:) )
+    if (CS%id_brankart_pfu>0 .or. CS%id_brankart_pfv>0) then
+      if (CS%Analytic_FV_PGF .and. CS%blocked_AFV) then
+        if (GV%Boussinesq) then
+          call PressureForce_blk_AFV_Bouss(h, tv, PFu2, PFv2, G, GV, US, &
+                   CS%PressureForce_blk_AFV_CSp, ALE_CSp, p_atm, pbce2, eta2)
+        else
+          call PressureForce_blk_AFV_nonBouss(h, tv, PFu2, PFv2, G, GV, US, &
+                   CS%PressureForce_blk_AFV_CSp, p_atm, pbce2, eta2)
+        endif
+      elseif (CS%Analytic_FV_PGF) then
+        if (GV%Boussinesq) then
+          call PressureForce_AFV_Bouss(h, tv, PFu2, PFv2, G, GV, US, CS%PressureForce_AFV_CSp, &
+                                       ALE_CSp, p_atm, pbce2, eta2)
+        else
+          call PressureForce_AFV_nonBouss(h, tv, PFu2, PFv2, G, GV, US, CS%PressureForce_AFV_CSp, &
+                                          ALE_CSp, p_atm, pbce2, eta2)
+        endif
+      else
+        if (GV%Boussinesq) then
+          call PressureForce_Mont_Bouss(h, tv, PFu2, PFv2, G, GV, US, CS%PressureForce_Mont_CSp, &
+                                        p_atm, pbce2, eta2)
+        else
+          call PressureForce_Mont_nonBouss(h, tv, PFu2, PFv2, G, GV, US, CS%PressureForce_Mont_CSp, &
+                                           p_atm, pbce2, eta2)
+        endif
+      endif
+      if (CS%id_brankart_pfu>0) then
+        PFu2(:,:,:) = PFu(:,:,:) - PFu2(:,:,:)
+        call post_data(CS%id_brankart_pfu, PFu2, CS%diag)
+      endif
+      if (CS%id_brankart_pfv>0) then
+        PFv2(:,:,:) = PFv(:,:,:) - PFv2(:,:,:)
+        call post_data(CS%id_brankart_pfv, PFv2, CS%diag)
+      endif
+    endif
   endif
 
 end subroutine Pressureforce
@@ -333,6 +368,10 @@ subroutine PressureForce_init(Time, G, GV, US, param_file, diag, CS, tides_CSp)
   if (CS%Brankart_factor /= 0.) then
     CS%id_brankart_anom = register_diag_field('ocean_model', 'Brankart_anom', diag%axesTL, Time, &
                  'Brankart density anomoly', 'kg m-3')
+    CS%id_brankart_pfu = register_diag_field('ocean_model', 'Brankart_PFu', diag%axesCuL, Time, &
+                 'Brankart zonal pressure force anomoly', 'kg m-3')
+    CS%id_brankart_pfv = register_diag_field('ocean_model', 'Brankart_PFv', diag%axesCvL, Time, &
+                 'Brankart zonal pressure force anomoly', 'kg m-3')
   endif
 
   if (CS%Analytic_FV_PGF .and. CS%blocked_AFV) then
