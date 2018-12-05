@@ -261,16 +261,7 @@ subroutine lsfit_TS(CS, G, tv, h, T, S, delta_T, delta_S)
       mn_ST = ( hl(1)*Sl(1)*Tl(1) + ( ( hl(2)*Sl(2)*Tl(2) + hl(3)*Sl(3)*Tl(3) ) &
                                     + ( hl(4)*Sl(4)*Tl(4) + hl(5)*Sl(5)*Tl(5) ) ) ) * mn_H
       cv_ST = mn_ST - mn_S*mn_T
-     !if (vr_T > 0.) then
-     !  del_S = cv_ST / sd_T
-     !  del_T = sd_T
-     !elseif (vr_S > 0.) then
-     !  del_T = cv_ST / sd_S
-     !  del_S = sd_S
-     !else
-     !  del_S = 0.
-     !  del_T = 0.
-     !endif
+
       del_T = sd_T
       del_S = 0.
       if (sd_T > 0.) del_S = cv_ST/sd_T
