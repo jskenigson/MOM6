@@ -232,7 +232,9 @@ subroutine lsfit_TS(CS, G, tv, h, T, S, delta_T, delta_S)
   integer :: i,j,k
   real :: Tl(5), Sl(5), hl(5) ! Copies of local stencil
   real :: mn_S, mn_T, mn_S2, mn_ST, mn_T2, vr_S, vr_T, mn_H, cv_ST, sd_S, sd_T
-  real :: dSdT, dTdS, del_T, del_S, scl
+  real :: dSdT, dTdS, del_T, del_S, scl, Tf
+
+  Tf = -1.9
 
   do k = 1, G%ke
     do j = G%jsc-2,G%jec+2 ; do i = G%isc-2,G%iec+2
@@ -271,7 +273,7 @@ subroutine lsfit_TS(CS, G, tv, h, T, S, delta_T, delta_S)
       ! Bound for fresh water
       if (CS%Brankart_factor*abs(del_S)>S(i,j,k)) scl = min( scl, S(i,j,k)/(CS%Brankart_factor*abs(del_S)) )
       ! Bound for freezing water (approximately because using Tf=0). Should really offset T by actual Tfreeze...)
-      if (CS%Brankart_factor*del_T>T(i,j,k).and.del_T>0.) scl = min( scl, max(T(i,j,k),0.)/(CS%Brankart_factor*del_T) )
+      if (CS%Brankart_factor*del_T>T(i,j,k)-Tf.and.del_T>0.) scl = min( scl, max(T(i,j,k)-Tf,0.)/(CS%Brankart_factor*del_T) )
       del_S = scl * del_S
       del_T = scl * del_T
       delta_S(i,j,k) = del_S * CS%Brankart_factor
