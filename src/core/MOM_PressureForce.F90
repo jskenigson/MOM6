@@ -107,10 +107,8 @@ subroutine PressureForce(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_atm, pbce, e
 
   if (do_Brankart) then
     call lsfit_TS(CS, G, tv, h, tv%T, tv%S, delta_T, delta_S)
-!   Ttmp(:,:,:) = max(-1.9, tv%T(:,:,:) + delta_T(:,:,:) )
     Stmp(:,:,:) = max(0., tv%S(:,:,:) + delta_S(:,:,:) )
     Ttmp(:,:,:) = tv%T(:,:,:) + delta_T(:,:,:)
-!   Stmp(:,:,:) = tv%S(:,:,:) + delta_S(:,:,:)
     if (CS%id_brankart_anom>0) then
       call density_from_TS(G, GV, tv, h, Ttmp, Stmp, rho1)
     endif
@@ -139,10 +137,8 @@ subroutine PressureForce(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_atm, pbce, e
                                          p_atm, pbce2, eta2)
       endif
     endif
-!   Ttmp(:,:,:) = max(-1.9, tv%T(:,:,:) - delta_T(:,:,:) )
     Stmp(:,:,:) = max(0., tv%S(:,:,:) - delta_S(:,:,:) )
     Ttmp(:,:,:) = tv%T(:,:,:) - delta_T(:,:,:)
-!   Stmp(:,:,:) = tv%S(:,:,:) - delta_S(:,:,:)
     if (CS%id_brankart_anom>0) then
       call density_from_TS(G, GV, tv, h, Ttmp, Stmp, rho2)
       rho1 = 0.5 * ( rho1(:,:,:) + rho2(:,:,:) ) ! < Brankart density, BAR[ rho(T,S) ]
