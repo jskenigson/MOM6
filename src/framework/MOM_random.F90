@@ -374,9 +374,9 @@ logical function test_fn(verbose, good, label, rvalue, ivalue)
 
   if (present(ivalue)) then
     if (.not. good) then
-      write(6,'(1x,a,i9,1x,a,a)') 'random: result =',ivalue,label,' <------- FAIL!'
+      write(0,'(1x,a,i9,1x,a,a)') 'random: result =',ivalue,label,' <------- FAIL!'
     elseif (verbose) then
-      write(6,'(1x,a,i9,1x,a)') 'random: result =',ivalue,label
+      write(0,'(1x,a,i9,1x,a)') 'random: result =',ivalue,label
     endif
   else
     if (.not. good) then
