@@ -139,7 +139,7 @@ integer function seed_from_time(Time)
   call get_date(Time,yr,mo,dy,hr,mn,sc)
   seed_from_time = sc + 61*(mn + 61*hr) + 379
   seed_from_time = mod(dy + 32*(mo + 13*yr), 2147483648) + int(43200*(1.+sin(real(seed_from_time))))
-  
+
 end function seed_from_time
 
 !> Create seed from position index
