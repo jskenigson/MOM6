@@ -226,7 +226,7 @@ logical function random_unit_tests(verbose)
   random_unit_tests = random_unit_tests .or. test_fn(verbose, abs(r2-r1)>0., 'date test', r2)
 
   ! Check statistics of large samples for uniform generator
-  mean = 0. ; std = 0. ; r2 = 0.
+  mean = 0. ; var = 0. ; ar1 = 0. ; r2 = 0.
   do i = 1, n
     r1 = random_01(test)
     mean = mean + (r1 - 0.5)
@@ -252,7 +252,7 @@ logical function random_unit_tests(verbose)
   random_unit_tests = random_unit_tests .or. test_fn(verbose, abs(r1)<2., 'n>>1, AR1 < std/sqrt(n) [uniform]', r1)
 
   ! Check statistics of large samples for normal generator
-  mean = 0. ; std = 0. ; r2 = 0.
+  mean = 0. ; var = 0. ; ar1 = 0. ; r2 = 0.
   do i = 1, n
     r1 = random_norm(test)
     mean = mean + r1
