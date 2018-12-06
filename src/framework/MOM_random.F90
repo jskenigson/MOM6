@@ -191,7 +191,7 @@ logical function random_unit_tests(verbose)
   real, dimension(:,:), allocatable :: r2d ! Random numbers
 
   random_unit_tests = .false.
-  stdunit = 6
+  stdunit = 0
   write(stdunit,'(1x,a)') '==== MOM_random: randum_unit_tests ======================='
 
   ! Check time-based seed
@@ -376,13 +376,13 @@ logical function test_fn(verbose, good, label, rvalue, ivalue)
     if (.not. good) then
       write(0,'(1x,a,i9,1x,a,a)') 'random: result =',ivalue,label,' <------- FAIL!'
     elseif (verbose) then
-      write(6,'(1x,a,i9,1x,a)') 'random: result =',ivalue,label
+      write(0,'(1x,a,i9,1x,a)') 'random: result =',ivalue,label
     endif
   else
     if (.not. good) then
       write(0,'(1x,a,1pe15.8,1x,a,a)') 'random: result =',rvalue,label,' <------- FAIL!'
     elseif (verbose) then
-      write(6,'(1x,a,1pe15.8,1x,a)') 'random: result =',rvalue,label
+      write(0,'(1x,a,1pe15.8,1x,a)') 'random: result =',rvalue,label
     endif
   endif
   test_fn = .not. good
