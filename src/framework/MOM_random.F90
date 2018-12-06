@@ -207,27 +207,27 @@ logical function random_unit_tests(verbose)
 
   ! Generate a random number, r1
   call random_construct(test, Time, 1)
-  r1 = random_01(test) 
+  r1 = random_01(test)
   random_unit_tests = random_unit_tests .or. test_fn(verbose, abs(r1)/=0., 'first call', r1)
 
   ! Check that we get a different number on a second call
-  r2 = random_01(test) 
+  r2 = random_01(test)
   random_unit_tests = random_unit_tests .or. test_fn(verbose, abs(r2-r1)>0., 'consecutive test', r2)
 
   ! Check that we can reproduce r1
   call random_construct(test, Time, 1)
-  r3 = random_01(test) 
+  r3 = random_01(test)
   random_unit_tests = random_unit_tests .or. test_fn(verbose, abs(r3-r1)==0., 'reproduce test', r2)
 
   ! Check that we get a different number for a different date
   Time = set_date(1903, 11, 21, 13, 0, 29)
   call random_construct(test, Time, 1)
-  r2 = random_01(test) 
+  r2 = random_01(test)
   random_unit_tests = random_unit_tests .or. test_fn(verbose, abs(r2-r1)>0., 'date test', r2)
 
   ! Check statistics of large samples for uniform generator
   mean = 0. ; std = 0. ; r2 = 0.
-  do i = 1, n 
+  do i = 1, n
     r1 = random_01(test)
     mean = mean + (r1 - 0.5)
     var = var + (r1 - 0.5)**2
@@ -253,7 +253,7 @@ logical function random_unit_tests(verbose)
 
   ! Check statistics of large samples for normal generator
   mean = 0. ; std = 0. ; r2 = 0.
-  do i = 1, n 
+  do i = 1, n
     r1 = random_norm(test)
     mean = mean + r1
     var = var + r1**2
@@ -386,7 +386,7 @@ logical function test_fn(verbose, good, label, rvalue, ivalue)
     endif
   endif
   test_fn = .not. good
-  
+
 end function test_fn
 
 end module MOM_random
