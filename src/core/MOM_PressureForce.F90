@@ -17,6 +17,7 @@ use MOM_PressureForce_blk_AFV, only : PressureForce_blk_AFV_CS
 use MOM_PressureForce_Mont, only : PressureForce_Mont_Bouss, PressureForce_Mont_nonBouss
 use MOM_PressureForce_Mont, only : PressureForce_Mont_init, PressureForce_Mont_end
 use MOM_PressureForce_Mont, only : PressureForce_Mont_CS
+use MOM_random, only : PRNG, random_construct_2d, random_norm_2d
 use MOM_tidal_forcing, only : tidal_forcing_CS
 use MOM_unit_scaling, only : unit_scale_type
 use MOM_variables, only : thermo_var_ptrs
@@ -35,7 +36,7 @@ type, public :: PressureForce_CS ; private
   logical :: blocked_AFV     !< If true, used the blocked version of the ANALYTIC_FV_PGF
                              !! code.  The value of this parameter should not change answers.
   real :: Brankart_factor    !< Scaling for mean contribution to Brankart effect.
-  real :: Brankart_noise     !< Scaling for random contribution to Brankart effect.
+  real :: Brankart_noise_r   !< Random noise redness (per step).
   !> Control structure for the analytically integrated finite volume pressure force
   type(PressureForce_AFV_CS), pointer :: PressureForce_AFV_CSp => NULL()
   !> Control structure for the analytically integrated finite volume pressure force
@@ -43,9 +44,14 @@ type, public :: PressureForce_CS ; private
   !> Control structure for the Montgomery potential form of pressure force
   type(PressureForce_Mont_CS), pointer :: PressureForce_Mont_CSp => NULL()
   type(diag_ctrl), pointer :: diag !< A structure that is used to regulate the timing of diagnostic output.
+  type(time_type), pointer :: Time !< Current model time
+
+  real, dimension(:,:), allocatable :: noise !< Random noise
+  type(PRNG) :: prng
 
   !>@{ Diagnostic IDs
   integer :: id_brankart_anom = -1, id_brankart_pfu = -1, id_brankart_pfv = -1
+  integer :: id_brankart_noise = -1
   !!@}
 end type PressureForce_CS
 
@@ -84,6 +90,14 @@ subroutine PressureForce(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, p_atm, pbce, e
   real, dimension(SZI_(G),SZJ_(G)) :: eta2 ! Alternative eta
   real, dimension(SZI_(G),SZJ_(G),SZK_(G)) :: rho1,rho2 ! For diagnostics
   logical :: do_Brankart
+
+  if (CS%Brankart_noise_r >= 0.) then
+    call random_construct_2d(CS%prng, G, CS%Time, 39199) ! Re-seed noise each step
+    call random_norm_2d(CS%prng, G, eta2) ! N(0,1) in eta2
+    CS%noise(:,:) = CS%Brankart_noise_r * CS%noise(:,:) + &
+                    sqrt( max(0., 1. - CS%Brankart_noise_r**2) ) * eta2(:,:)
+    if (CS%id_brankart_noise>0) call post_data(CS%id_brankart_noise, CS%noise, CS%diag)
+  endif
 
   tv_tmp%eqn_of_state => tv%eqn_of_state
   tv_tmp%P_ref = tv%P_ref
@@ -232,7 +246,7 @@ subroutine lsfit_TS(CS, G, tv, h, T, S, delta_T, delta_S)
   integer :: i,j,k
   real :: Tl(5), Sl(5), hl(5) ! Copies of local stencil
   real :: mn_S, mn_T, mn_S2, mn_ST, mn_T2, vr_S, vr_T, mn_H, cv_ST, sd_S, sd_T
-  real :: dSdT, dTdS, del_T, del_S, scl, Tf
+  real :: dSdT, dTdS, del_T, del_S, scl, Tf, amp
 
   Tf = -1.9
 
@@ -270,14 +284,16 @@ subroutine lsfit_TS(CS, G, tv, h, T, S, delta_T, delta_S)
       ! Scale down results to avoid spuriously large deltas
       scl = 1.
       if (abs(del_S)>sd_S) scl = sd_S/abs(del_S)
+      amp = CS%Brankart_factor
+      if (CS%Brankart_noise_r >= 0.) amp = amp * abs(CS%noise(i,j))
       ! Bound for fresh water
-      if (CS%Brankart_factor*abs(del_S)>S(i,j,k)) scl = min( scl, S(i,j,k)/(CS%Brankart_factor*abs(del_S)) )
-      ! Bound for freezing water (approximately because using Tf=0). Should really offset T by actual Tfreeze...)
-      if (CS%Brankart_factor*del_T>T(i,j,k)-Tf.and.del_T>0.) scl = min( scl, max(T(i,j,k)-Tf,0.)/(CS%Brankart_factor*del_T) )
+      if (amp*abs(del_S)>S(i,j,k)) scl = min( scl, S(i,j,k)/(amp*abs(del_S)) )
+      ! Bound for freezing water (approximately because using Tf=const). Should really offset T by actual Tfreeze...)
+      if (amp*del_T>T(i,j,k)-Tf.and.del_T>0.) scl = min( scl, max(T(i,j,k)-Tf,0.)/(amp*del_T) )
       del_S = scl * del_S
       del_T = scl * del_T
-      delta_S(i,j,k) = del_S * CS%Brankart_factor
-      delta_T(i,j,k) = del_T * CS%Brankart_factor
+      delta_S(i,j,k) = del_S * amp
+      delta_T(i,j,k) = del_T * amp
     enddo ; enddo
   enddo
 end subroutine lsfit_TS
@@ -332,7 +348,7 @@ subroutine PressureForce_init(Time, G, GV, US, param_file, diag, CS, tides_CSp)
     return
   else ; allocate(CS) ; endif
 
-  CS%diag => diag
+  CS%diag => diag ; CS%Time => Time
 
   ! Read all relevant parameters and write them to the model log.
   call log_version(param_file, mdl, version, "")
@@ -350,19 +366,22 @@ subroutine PressureForce_init(Time, G, GV, US, param_file, diag, CS, tides_CSp)
                  "A non-dimensional coefficient to multiply local\n"//&
                  "T/S differences when incorporating unresolved\n"//&
                  "perturbations in the mean density.", default=0., units='nondom', do_not_log=.true.)
-  call get_param(param_file, mdl, "BRANKART_NOISE", CS%Brankart_noise, &
-                 "Amplitude of stochastic contribution to\n"//&
+  call get_param(param_file, mdl, "BRANKART_NOISE_R", CS%Brankart_noise_r, &
+                 "Redness of stochastic contribution to\n"//&
                  "T/S differences representing unresolved\n"//&
-                 "perturbations in the mean density.", default=0., units='nondom', do_not_log=.true.)
-  if (CS%Brankart_noise /= 0.) call MOM_error(FATAL, "interpret_eos_selection: "//&
-                 "Brankart noise not implemented yet!")
-  if (CS%Brankart_factor /= 0.) then
+                 "perturbations in the mean density.", default=-1., units='nondom', do_not_log=.true.)
+  if (CS%Brankart_factor /= 0. .or. CS%Brankart_noise_r >= 0.) then
     CS%id_brankart_anom = register_diag_field('ocean_model', 'Brankart_anom', diag%axesTL, Time, &
                  'Brankart density anomoly', 'kg m-3')
     CS%id_brankart_pfu = register_diag_field('ocean_model', 'Brankart_PFu', diag%axesCuL, Time, &
                  'Brankart zonal pressure force anomoly', 'kg m-3')
     CS%id_brankart_pfv = register_diag_field('ocean_model', 'Brankart_PFv', diag%axesCvL, Time, &
                  'Brankart zonal pressure force anomoly', 'kg m-3')
+  endif
+  if (CS%Brankart_noise_r >= 0.) then
+    allocate( CS%noise(G%isd:G%ied,G%jsd:G%jed) ) ; CS%noise(:,:) = 0.
+    CS%id_brankart_noise = register_diag_field('ocean_model', 'Brankart_noise', diag%axesT1, Time, &
+                 'Brankart noise', 'nondim')
   endif
 
   if (CS%Analytic_FV_PGF .and. CS%blocked_AFV) then
