@@ -3,14 +3,10 @@ module MOM_random
 
 ! This file is part of MOM6. See LICENSE.md for the license.
 
-use MOM_diag_mediator, only : diag_ctrl, time_type
-use MOM_diag_mediator, only : post_data, register_diag_field
-use MOM_error_handler, only : MOM_error, MOM_mesg, FATAL, WARNING
-use MOM_file_parser,   only : get_param, log_version, param_file_type
 use MOM_grid,          only : ocean_grid_type
 use MOM_hor_index,     only : hor_index_type
 use MOM_domains,       only : MOM_domain_type
-use MOM_time_manager,  only : set_date, get_date
+use MOM_time_manager,  only : time_type, set_date, get_date
 
 use MersenneTwister_mod, only : randomNumberSequence ! Random number class from FMS
 use MersenneTwister_mod, only : new_RandomNumberSequence ! Constructor/initializer
