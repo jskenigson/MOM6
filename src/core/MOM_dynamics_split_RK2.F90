@@ -47,6 +47,7 @@ use MOM_hor_visc,              only : horizontal_viscosity, hor_visc_init, hor_v
 use MOM_interface_heights,     only : find_eta
 use MOM_lateral_mixing_coeffs, only : VarMix_CS
 use MOM_MEKE_types,            only : MEKE_type
+use MOM_MEKE,                  only : grad_MEKE
 use MOM_open_boundary,         only : ocean_OBC_type, radiation_open_bdry_conds
 use MOM_open_boundary,         only : open_boundary_zero_normal_flow
 use MOM_open_boundary,         only : open_boundary_test_extern_h
@@ -138,7 +139,8 @@ type, public :: MOM_dyn_split_RK2_CS ; private
                                   !! barotropic solver.
   logical :: calc_dtbt            !< If true, calculate the barotropic time-step
                                   !! dynamically.
-
+  logical :: include_grad_meke    !< If true, adds the acceleration due to the
+                                  !! lateral gradient of MEKE.
   real    :: be      !< A nondimensional number from 0.5 to 1 that controls
                      !! the backward weighting of the time stepping scheme.
   real    :: begw    !< A nondimensional number from 0 to 1 that controls
@@ -218,7 +220,7 @@ public end_dyn_split_RK2
 
 !>@{ CPU time clock IDs
 integer :: id_clock_Cor, id_clock_pres, id_clock_vertvisc
-integer :: id_clock_horvisc, id_clock_mom_update
+integer :: id_clock_horvisc, id_clock_grad_meke, id_clock_mom_update
 integer :: id_clock_continuity, id_clock_thick_diff
 integer :: id_clock_btstep, id_clock_btcalc, id_clock_btforce
 integer :: id_clock_pass, id_clock_pass_init
@@ -316,6 +318,8 @@ subroutine step_MOM_dyn_split_RK2(u, v, h, tv, visc, &
     v_av, & ! The meridional velocity time-averaged over a time step, in m s-1.
     h_av    ! The layer thickness time-averaged over a time step, in m or
             ! kg m-2.
+  real, dimension(SZIB_(G),SZJ_(G),SZK_(G)) :: dMEKEdx !< Zonal derivative of MEKE (m s-2)
+  real, dimension(SZI_(G),SZJB_(G),SZK_(G)) :: dMEKEdy !< Meridional derivative of MEKE (m s-2)
   real :: Idt
   logical :: dyn_p_surf
   logical :: BT_cont_BT_thick ! If true, use the BT_cont_type to estimate the
@@ -436,6 +440,12 @@ subroutine step_MOM_dyn_split_RK2(u, v, h, tv, visc, &
   call cpu_clock_end(id_clock_Cor)
   if (showCallTree) call callTree_wayPoint("done with CorAdCalc (step_MOM_dyn_split_RK2)")
 
+  if (CS%include_grad_meke) then
+    call cpu_clock_begin(id_clock_grad_meke)
+    call grad_MEKE(MEKE, G, GV, US, VarMix%ebt_struct, dMEKEdx, dMEKEdy)
+    call cpu_clock_end(id_clock_grad_meke)
+  endif
+
 ! u_bc_accel = CAu + PFu + diffu(u[n-1])
   call cpu_clock_begin(id_clock_btforce)
   !$OMP parallel do default(shared)
@@ -447,6 +457,17 @@ subroutine step_MOM_dyn_split_RK2(u, v, h, tv, visc, &
       v_bc_accel(i,J,k) = (CS%Cav(i,J,k) + CS%PFv(i,J,k)) + CS%diffv(i,J,k)
     enddo ; enddo
   enddo
+  if (CS%include_grad_meke) then
+    !$OMP parallel do default(shared)
+    do k=1,nz
+      do j=js,je ; do I=Isq,Ieq
+        u_bc_accel(I,j,k) = u_bc_accel(I,j,k) - dMEKEdx(I,j,k)
+      enddo ; enddo
+      do J=Jsq,Jeq ; do i=is,ie
+        v_bc_accel(i,J,k) = v_bc_accel(i,J,k) - dMEKEdy(i,J,k)
+      enddo ; enddo
+    enddo
+  endif
   if (associated(CS%OBC)) then
     call open_boundary_zero_normal_flow(CS%OBC, G, u_bc_accel, v_bc_accel)
   endif
@@ -705,6 +726,17 @@ subroutine step_MOM_dyn_split_RK2(u, v, h, tv, visc, &
       v_bc_accel(i,J,k) = (CS%Cav(i,J,k) + CS%PFv(i,J,k)) + CS%diffv(i,J,k)
     enddo ; enddo
   enddo
+  if (CS%include_grad_meke) then
+    !$OMP parallel do default(shared)
+    do k=1,nz
+      do j=js,je ; do I=Isq,Ieq
+        u_bc_accel(I,j,k) = u_bc_accel(I,j,k) - dMEKEdx(I,j,k)
+      enddo ; enddo
+      do J=Jsq,Jeq ; do i=is,ie
+        v_bc_accel(i,J,k) = v_bc_accel(i,J,k) - dMEKEdy(i,J,k)
+      enddo ; enddo
+    enddo
+  endif
   if (associated(CS%OBC)) then
     call open_boundary_zero_normal_flow(CS%OBC, G, u_bc_accel, v_bc_accel)
   endif
@@ -1037,7 +1069,9 @@ subroutine initialize_dyn_split_RK2(u, v, h, uh, vh, eta, Time, G, GV, US, param
                  "If SPLIT is false and USE_RK2 is true, BEGW can be \n"//&
                  "between 0 and 0.5 to damp gravity waves.", &
                  units="nondim", default=0.0)
-
+  call get_param(param_file, mdl, "INCLUDE_GRAD_MEKE`", CS%include_grad_meke, &
+                 "If true, adds the acceleration due to the lateral\n"//&
+                 "gradient of MEKE.", default=.false.)
   call get_param(param_file, mdl, "SPLIT_BOTTOM_STRESS", CS%split_bottom_stress, &
                  "If true, provide the bottom stress calculated by the \n"//&
                  "vertical viscosity to the barotropic solver.", default=.false.)
@@ -1202,7 +1236,8 @@ subroutine initialize_dyn_split_RK2(u, v, h, uh, vh, eta, Time, G, GV, US, param
   id_clock_continuity = cpu_clock_id('(Ocean continuity equation)',      grain=CLOCK_MODULE)
   id_clock_pres       = cpu_clock_id('(Ocean pressure force)',           grain=CLOCK_MODULE)
   id_clock_vertvisc   = cpu_clock_id('(Ocean vertical viscosity)',       grain=CLOCK_MODULE)
-  id_clock_horvisc    = cpu_clock_id('(Ocean horizontal viscosity)',     grain=CLOCK_MODULE)
+  id_clock_horvisc    = cpu_clock_id('(Ocean grad MEKE)',                grain=CLOCK_ROUTINE)
+  id_clock_grad_meke  = cpu_clock_id('(Ocean horizontal viscosity)',     grain=CLOCK_MODULE)
   id_clock_mom_update = cpu_clock_id('(Ocean momentum increments)',      grain=CLOCK_MODULE)
   id_clock_pass       = cpu_clock_id('(Ocean message passing)',          grain=CLOCK_MODULE)
   id_clock_pass_init  = cpu_clock_id('(Ocean init message passing)',     grain=CLOCK_ROUTINE)

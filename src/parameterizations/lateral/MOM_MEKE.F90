@@ -27,6 +27,7 @@ implicit none ; private
 #include <MOM_memory.h>
 
 public step_forward_MEKE, MEKE_init, MEKE_alloc_register_restart, MEKE_end
+public grad_MEKE
 
 !> Control structure that contains MEKE parameters and diagnostics handles
 type, public :: MEKE_CS ; private
@@ -785,6 +786,49 @@ subroutine MEKE_lengthScales_0d(CS, area, beta, depth, Rd_dx, SN, EKE, Z_to_L, &
 
 end subroutine MEKE_lengthScales_0d
 
+!> Returns lateral acceleration due to gradient of MEKE
+subroutine grad_MEKE(MEKE, G, GV, US, vStruct, dEdx, dEdy)
+  type(MEKE_type),                           pointer       :: MEKE !< MEKE data.
+  type(ocean_grid_type),                     intent(in)    :: G    !< Ocean grid.
+  type(verticalGrid_type),                   intent(in)    :: GV   !< Ocean vertical grid structure.
+  type(unit_scale_type),                     intent(in)    :: US   !< A dimensional unit scaling type.
+  real, dimension(:,:,:),                    pointer       :: vStruct !< Vertical structure function (nondim).
+  real, dimension(SZIB_(G),SZJ_(G),SZK_(G)), intent(inout) :: dEdx !< Zonal derivative of MEKE (m s-2).
+  real, dimension(SZI_(G),SZJB_(G),SZK_(G)), intent(inout) :: dEdy !< Meridional derivative of MEKE (m s-2).
+  ! Local variables
+  integer :: i,j,k
+  real :: vStruct_at_u, vStruct_at_v
+
+  if (MEKE%grad_use_vstruct) then
+    if (.not.associated(vStruct)) call MOM_error(FATAL, &
+                 "grad_MEKE: vertical structure not associated.")
+    do k = 1, GV%ke
+      do j = G%jsc, G%jec ; do I = G%isc-1, G%iec+1
+        vStruct_at_u = 0.5 * ( vStruct(i,j,k) + vStruct(i+1,j,k) )
+        dEdy(I,j,k) = (MEKE%MEKE(i+1,j) - MEKE%MEKE(i,j)) * G%IdxCu(I,j) &
+                      * vStruct_at_u * G%mask2dCu(I,j)
+      enddo ; enddo
+      do J = G%jsc-1, G%jec+1 ; do i = G%isc, G%iec
+        vStruct_at_v = 0.5 * ( vStruct(i,j,k) + vStruct(i,j+1,k) )
+        dEdy(i,J,k) = (MEKE%MEKE(i,j+1) - MEKE%MEKE(i,j)) * G%IdyCv(i,J) &
+                      * vStruct_at_v * G%mask2dCv(i,J)
+      enddo ; enddo
+    enddo
+  else
+    do k = 1, GV%ke
+      do j = G%jsc, G%jec ; do I = G%isc-1, G%iec+1
+        dEdy(I,j,k) = (MEKE%MEKE(i+1,j) - MEKE%MEKE(i,j)) * G%IdxCu(I,j) &
+                      * G%mask2dCu(I,j)
+      enddo ; enddo
+      do J = G%jsc-1, G%jec+1 ; do i = G%isc, G%iec
+        dEdy(i,J,k) = (MEKE%MEKE(i,j+1) - MEKE%MEKE(i,j)) * G%IdyCv(i,J) &
+                      * G%mask2dCv(i,J)
+      enddo ; enddo
+    enddo
+  endif
+
+end subroutine grad_MEKE
+
 !> Initializes the MOM_MEKE module and reads parameters.
 !! Returns True if module is to be used, otherwise returns False.
 logical function MEKE_init(Time, G, param_file, diag, CS, MEKE, restart_CS)
@@ -950,6 +994,8 @@ logical function MEKE_init(Time, G, param_file, diag, CS, MEKE, restart_CS)
                  "computing beta in the expression of Rhines scale. Use 1 if full\n"//&
                  "topographic beta effect is considered; use 0 if it's completely ignored.", &
                  units="nondim", default=0.0)
+  call get_param(param_file, mdl, "MEKE_GRAD_USE_VSTRUCT", MEKE%grad_use_vstruct, &
+                 "If True, then grad MEKE has vertical structure.", default=.true.)
 
   ! Nonlocal module parameters
   call get_param(param_file, mdl, "CDRAG", CS%cdrag, &
