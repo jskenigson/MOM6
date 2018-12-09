@@ -16,6 +16,7 @@ use MOM_file_parser,   only : read_param, get_param, log_version, param_file_typ
 use MOM_grid,          only : ocean_grid_type
 use MOM_hor_index,     only : hor_index_type
 use MOM_io,            only : vardesc, var_desc
+use MOM_random,        only : PRNG, random_construct_2d, random_norm_2d
 use MOM_restart,       only : MOM_restart_CS, register_restart_field, query_initialized
 use MOM_unit_scaling,  only : unit_scale_type
 use MOM_variables,     only : vertvisc_type
@@ -66,16 +67,19 @@ type, public :: MEKE_CS ; private
   real :: MEKE_advection_factor !< A scaling in front of the advection of MEKE (non-dim.)
   real :: MEKE_topographic_beta !< Weight for how much topographic beta is considered
                                 !! when computing beta in Rhines scale (non-dim.)
+  real :: MEKE_grad_noise_t !< Time-scale of red noise (s).
   logical :: initialize !< If True, invokes a steady state solver to calculate MEKE.
   logical :: debug      !< If true, write out checksums of data for debugging
 
   ! Optional storage
   real, dimension(:,:), allocatable :: del2MEKE !< Laplacian of MEKE, used for bi-harmonic diffusion.
+  type(PRNG) :: prng    !< Pseudo-random number generator
 
+  type(time_type), pointer :: Time => NULL() !< The current model time.
   type(diag_ctrl), pointer :: diag => NULL() !< A type that regulates diagnostics output
   !>@{ Diagnostic handles
   integer :: id_MEKE = -1, id_Ue = -1, id_Kh = -1, id_src = -1
-  integer :: id_Ub = -1, id_Ut = -1
+  integer :: id_Ub = -1, id_Ut = -1, id_meke_noise = -1
   integer :: id_GM_src = -1, id_mom_src = -1, id_decay = -1
   integer :: id_KhMEKE_u = -1, id_KhMEKE_v = -1, id_Ku = -1
   integer :: id_Le = -1, id_gamma_b = -1, id_gamma_t = -1
@@ -151,6 +155,14 @@ subroutine step_forward_MEKE(MEKE, h, SN_u, SN_v, visc, dt, G, GV, US, CS, hu, h
          "MOM_MEKE: Module must be initialized before it is used.")
   if (.not.associated(MEKE)) call MOM_error(FATAL, &
          "MOM_MEKE: MEKE must be initialized before it is used.")
+
+  if (CS%MEKE_grad_noise_t >= 0.) then
+    call random_construct_2d(CS%prng, G, CS%Time, 39197) ! Re-seed noise each step
+    call random_norm_2d(CS%prng, G, mass) ! N(0,1) in mass
+    sdt = max(dt, CS%MEKE_grad_noise_t)
+    sdt = max(0., 1. - dt / sdt )
+    MEKE%noise(:,:) = sdt * MEKE%noise(:,:) + sqrt( max(0., 1. - sdt**2) ) * mass(:,:)
+  endif
 
   Rho0 = GV%H_to_kg_m2 * GV%m_to_H
   mass_neglect = GV%H_to_kg_m2 * GV%H_subroundoff
@@ -538,6 +550,7 @@ subroutine step_forward_MEKE(MEKE, h, SN_u, SN_v, visc, dt, G, GV, US, CS, hu, h
       enddo ; enddo
       call post_data(CS%id_gamma_t, barotrFac2, CS%diag)
     endif
+    if (CS%id_meke_noise>0) call post_data(CS%id_meke_noise, MEKE%noise, CS%diag)
 
 ! else ! if MEKE%MEKE
 !   call MOM_error(FATAL, "MOM_MEKE: MEKE%MEKE is not associated!")
@@ -797,32 +810,46 @@ subroutine grad_MEKE(MEKE, G, GV, US, vStruct, dEdx, dEdy)
   real, dimension(SZI_(G),SZJB_(G),SZK_(G)), intent(inout) :: dEdy !< Meridional derivative of MEKE (m s-2).
   ! Local variables
   integer :: i,j,k
-  real :: vStruct_at_u, vStruct_at_v
+  real :: vStruct_at_u, vStruct_at_v, noise_at_u, noise_at_v
+  logical :: multiply_by_noise
+  real, dimension(SZI_(G),SZJ_(G)) :: noise !< Red noise
+
+  if (allocated(MEKE%noise)) then
+      noise(i,j) = MEKE%noise(i,j)
+  else
+    do j = G%jsc-1, G%jec+1 ; do i = G%isc-1, G%iec+1
+      noise(i,j) = 1.
+    enddo ; enddo
+  endif
 
   if (MEKE%grad_use_vstruct) then
     if (.not.associated(vStruct)) call MOM_error(FATAL, &
                  "grad_MEKE: vertical structure not associated.")
     do k = 1, GV%ke
-      do j = G%jsc, G%jec ; do I = G%isc-1, G%iec+1
+      do j = G%jsc, G%jec ; do I = G%isc-1, G%iec
+        noise_at_u = 0.5 * ( noise(i,j) + noise(i+1,j) )
         vStruct_at_u = 0.5 * ( vStruct(i,j,k) + vStruct(i+1,j,k) )
-        dEdy(I,j,k) = (MEKE%MEKE(i+1,j) - MEKE%MEKE(i,j)) * G%IdxCu(I,j) &
-                      * vStruct_at_u * G%mask2dCu(I,j)
+        dEdx(I,j,k) = (MEKE%MEKE(i+1,j) - MEKE%MEKE(i,j)) * G%IdxCu(I,j) &
+                      * vStruct_at_u * G%mask2dCu(I,j) * noise_at_u
       enddo ; enddo
-      do J = G%jsc-1, G%jec+1 ; do i = G%isc, G%iec
+      do J = G%jsc-1, G%jec ; do i = G%isc, G%iec
+        noise_at_v = 0.5 * ( noise(i,j) + noise(i,j+1) )
         vStruct_at_v = 0.5 * ( vStruct(i,j,k) + vStruct(i,j+1,k) )
         dEdy(i,J,k) = (MEKE%MEKE(i,j+1) - MEKE%MEKE(i,j)) * G%IdyCv(i,J) &
-                      * vStruct_at_v * G%mask2dCv(i,J)
+                      * vStruct_at_v * G%mask2dCv(i,J) * noise_at_v
       enddo ; enddo
     enddo
   else
     do k = 1, GV%ke
-      do j = G%jsc, G%jec ; do I = G%isc-1, G%iec+1
-        dEdy(I,j,k) = (MEKE%MEKE(i+1,j) - MEKE%MEKE(i,j)) * G%IdxCu(I,j) &
-                      * G%mask2dCu(I,j)
+      do j = G%jsc, G%jec ; do I = G%isc-1, G%iec
+        noise_at_u = 0.5 * ( noise(i,j) + noise(i+1,j) )
+        dEdx(I,j,k) = (MEKE%MEKE(i+1,j) - MEKE%MEKE(i,j)) * G%IdxCu(I,j) &
+                      * G%mask2dCu(I,j) * noise_at_u
       enddo ; enddo
-      do J = G%jsc-1, G%jec+1 ; do i = G%isc, G%iec
+      do J = G%jsc-1, G%jec ; do i = G%isc, G%iec
+        noise_at_v = 0.5 * ( noise(i,j) + noise(i,j+1) )
         dEdy(i,J,k) = (MEKE%MEKE(i,j+1) - MEKE%MEKE(i,j)) * G%IdyCv(i,J) &
-                      * G%mask2dCv(i,J)
+                      * G%mask2dCv(i,J) * noise_at_v
       enddo ; enddo
     enddo
   endif
@@ -832,7 +859,7 @@ end subroutine grad_MEKE
 !> Initializes the MOM_MEKE module and reads parameters.
 !! Returns True if module is to be used, otherwise returns False.
 logical function MEKE_init(Time, G, param_file, diag, CS, MEKE, restart_CS)
-  type(time_type),         intent(in)    :: Time       !< The current model time.
+  type(time_type), target, intent(in)    :: Time       !< The current model time.
   type(ocean_grid_type),   intent(inout) :: G          !< The ocean's grid structure.
   type(param_file_type),   intent(in)    :: param_file !< Parameter file parser structure.
   type(diag_ctrl), target, intent(inout) :: diag       !< Diagnostics structure.
@@ -996,6 +1023,9 @@ logical function MEKE_init(Time, G, param_file, diag, CS, MEKE, restart_CS)
                  units="nondim", default=0.0)
   call get_param(param_file, mdl, "MEKE_GRAD_USE_VSTRUCT", MEKE%grad_use_vstruct, &
                  "If True, then grad MEKE has vertical structure.", default=.true.)
+  call get_param(param_file, mdl, "MEKE_GRAD_NOISE_T", CS%MEKE_grad_noise_t, &
+                 "Timescale for redness of stochastic multiplied to gradient\n"//&
+                 "of MEKE. Ignored if negative.", default=-1., units='s', do_not_log=.true.)
 
   ! Nonlocal module parameters
   call get_param(param_file, mdl, "CDRAG", CS%cdrag, &
@@ -1032,6 +1062,7 @@ logical function MEKE_init(Time, G, param_file, diag, CS, MEKE, restart_CS)
   endif
 
 ! Register fields for output from this module.
+  CS%Time => Time
   CS%diag => diag
   CS%id_MEKE = register_diag_field('ocean_model', 'MEKE', diag%axesT1, Time, &
      'Mesoscale Eddy Kinetic Energy', 'm2 s-2')
@@ -1097,7 +1128,7 @@ subroutine MEKE_alloc_register_restart(HI, param_file, MEKE, restart_CS)
   type(MOM_restart_CS),  pointer       :: restart_CS !< Restart control structure for MOM_MEKE.
 ! Local variables
   type(vardesc) :: vd
-  real :: MEKE_GMcoeff, MEKE_FrCoeff, MEKE_KHCoeff, MEKE_viscCoeff
+  real :: MEKE_GMcoeff, MEKE_FrCoeff, MEKE_KHCoeff, MEKE_viscCoeff, MEKE_grad_noise_t
   logical :: useMEKE
   integer :: isd, ied, jsd, jed
 
@@ -1109,6 +1140,7 @@ subroutine MEKE_alloc_register_restart(HI, param_file, MEKE, restart_CS)
   MEKE_FrCoeff =-1.; call read_param(param_file,"MEKE_FRCOEFF",MEKE_FrCoeff)
   MEKE_KhCoeff =1.; call read_param(param_file,"MEKE_KHCOEFF",MEKE_KhCoeff)
   MEKE_viscCoeff =0.; call read_param(param_file,"MEKE_VISCOSITY_COEFF",MEKE_viscCoeff)
+  MEKE_grad_noise_t =-1.; call read_param(param_file,"MEKE_GRAD_NOISE_T",MEKE_grad_noise_t)
 
 ! Allocate control structure
   if (associated(MEKE)) then
@@ -1144,6 +1176,12 @@ subroutine MEKE_alloc_register_restart(HI, param_file, MEKE, restart_CS)
     vd = var_desc("MEKE_Ah", "m2 s-1", hor_grid='h', z_grid='1', &
              longname="Lateral viscosity from Mesoscale Eddy Kinetic Energy")
     call register_restart_field(MEKE%Ku, vd, .false., restart_CS)
+  endif
+  if (MEKE_grad_noise_t>=0.) then
+    allocate(MEKE%noise(isd:ied,jsd:jed)) ; MEKE%noise(:,:) = 0.0
+    vd = var_desc("MEKE_noise", "1", hor_grid='h', z_grid='1', &
+             longname="Red noise")
+    call register_restart_field(MEKE%noise, vd, .false., restart_CS)
   endif
 
 end subroutine MEKE_alloc_register_restart
