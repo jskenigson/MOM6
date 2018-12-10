@@ -1029,7 +1029,7 @@ logical function MEKE_init(Time, G, param_file, diag, CS, MEKE, restart_CS)
                  "Scale factor for grad MEKE.", units="1", default=1.)
   call get_param(param_file, mdl, "MEKE_GRAD_NOISE_T", CS%MEKE_grad_noise_t, &
                  "Timescale for redness of stochastic multiplied to gradient\n"//&
-                 "of MEKE. Ignored if negative.", default=-1., units='s', do_not_log=.true.)
+                 "of MEKE. Ignored if negative.", default=-1., units='s')
 
   ! Nonlocal module parameters
   call get_param(param_file, mdl, "CDRAG", CS%cdrag, &

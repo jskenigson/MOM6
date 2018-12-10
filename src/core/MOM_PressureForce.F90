@@ -365,11 +365,11 @@ subroutine PressureForce_init(Time, G, GV, US, param_file, diag, CS, tides_CSp)
   call get_param(param_file, mdl, "BRANKART_FACTOR", CS%Brankart_factor, &
                  "A non-dimensional coefficient to multiply local\n"//&
                  "T/S differences when incorporating unresolved\n"//&
-                 "perturbations in the mean density.", default=0., units='nondom', do_not_log=.true.)
+                 "perturbations in the mean density.", default=0., units='nondom')
   call get_param(param_file, mdl, "BRANKART_NOISE_R", CS%Brankart_noise_r, &
                  "Redness of stochastic contribution to\n"//&
                  "T/S differences representing unresolved\n"//&
-                 "perturbations in the mean density.", default=-1., units='nondom', do_not_log=.true.)
+                 "perturbations in the mean density.", default=-1., units='nondom')
   if (CS%Brankart_factor /= 0. .or. CS%Brankart_noise_r >= 0.) then
     CS%id_brankart_anom = register_diag_field('ocean_model', 'Brankart_anom', diag%axesTL, Time, &
                  'Brankart density anomoly', 'kg m-3')
