@@ -815,7 +815,9 @@ subroutine grad_MEKE(MEKE, G, GV, US, vStruct, dEdx, dEdy)
   real, dimension(SZI_(G),SZJ_(G)) :: noise !< Red noise
 
   if (allocated(MEKE%noise)) then
-      noise(i,j) = exp( 0.25*MEKE%noise(i,j) ) * MEKE%grad_factor
+    do j = G%jsc-1, G%jec+1 ; do i = G%isc-1, G%iec+1
+      noise(i,j) = min(2.5, exp( 0.25*MEKE%noise(i,j) )) * MEKE%grad_factor
+    enddo ; enddo
   else
     do j = G%jsc-1, G%jec+1 ; do i = G%isc-1, G%iec+1
       noise(i,j) = MEKE%grad_factor
