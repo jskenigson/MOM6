@@ -158,6 +158,7 @@ type, public :: MOM_dyn_split_RK2_CS ; private
   integer :: id_umo_2d = -1, id_vmo_2d = -1
   integer :: id_PFu    = -1, id_PFv    = -1
   integer :: id_CAu    = -1, id_CAv    = -1
+  integer :: id_dMEKEdx= -1, id_dMEKEdy= -1
 
   ! Split scheme only.
   integer :: id_uav        = -1, id_vav        = -1
@@ -882,6 +883,8 @@ subroutine step_MOM_dyn_split_RK2(u, v, h, tv, visc, &
   if (CS%id_PFv > 0) call post_data(CS%id_PFv, CS%PFv, CS%diag)
   if (CS%id_CAu > 0) call post_data(CS%id_CAu, CS%CAu, CS%diag)
   if (CS%id_CAv > 0) call post_data(CS%id_CAv, CS%CAv, CS%diag)
+  if (CS%id_dMEKEdx > 0) call post_data(CS%id_dMEKEdx, dMEKEdx, CS%diag)
+  if (CS%id_dMEKEdy > 0) call post_data(CS%id_dMEKEdy, dMEKEdy, CS%diag)
 
   ! Here the thickness fluxes are offered for time averaging.
   if (CS%id_uh         > 0) call post_data(CS%id_uh , uh,                   CS%diag)
@@ -1221,6 +1224,12 @@ subroutine initialize_dyn_split_RK2(u, v, h, uh, vh, eta, Time, G, GV, US, param
       'Zonal Pressure Force Acceleration', 'm s-2')
   CS%id_PFv = register_diag_field('ocean_model', 'PFv', diag%axesCvL, Time, &
       'Meridional Pressure Force Acceleration', 'm s-2')
+  if (CS%include_grad_MEKE) then
+    CS%id_dMEKEdx = register_diag_field('ocean_model', 'dMEKEdx', diag%axesCuL, Time, &
+      'Zonal derivative of MEKE', 'm s-2')
+    CS%id_dMEKEdy = register_diag_field('ocean_model', 'dMEKEdy', diag%axesCvL, Time, &
+      'Meridional derivative of MEKE', 'm s-2')
+  endif
 
   CS%id_uav = register_diag_field('ocean_model', 'uav', diag%axesCuL, Time, &
       'Barotropic-step Averaged Zonal Velocity', 'm s-1')
