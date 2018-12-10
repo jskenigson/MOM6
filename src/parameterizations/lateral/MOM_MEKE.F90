@@ -1110,6 +1110,10 @@ logical function MEKE_init(Time, G, param_file, diag, CS, MEKE, restart_CS)
      'Ratio of bottom-projected eddy velocity to column-mean eddy velocity', 'nondim')
   CS%id_gamma_t = register_diag_field('ocean_model', 'MEKE_gamma_t', diag%axesT1, Time, &
      'Ratio of barotropic eddy velocity to column-mean eddy velocity', 'nondim')
+  if (CS%MEKE_grad_noise_t>=0.) then
+    CS%id_meke_noise = register_diag_field('ocean_model', 'MEKE_noise', diag%axesT1, Time, &
+     'Noise for grad MEKE', 'nondim')
+  endif
 
   CS%id_clock_pass = cpu_clock_id('(Ocean continuity halo updates)', grain=CLOCK_ROUTINE)
 
