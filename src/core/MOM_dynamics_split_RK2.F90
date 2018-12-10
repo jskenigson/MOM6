@@ -1072,7 +1072,7 @@ subroutine initialize_dyn_split_RK2(u, v, h, uh, vh, eta, Time, G, GV, US, param
                  "If SPLIT is false and USE_RK2 is true, BEGW can be \n"//&
                  "between 0 and 0.5 to damp gravity waves.", &
                  units="nondim", default=0.0)
-  call get_param(param_file, mdl, "INCLUDE_GRAD_MEKE`", CS%include_grad_meke, &
+  call get_param(param_file, mdl, "INCLUDE_GRAD_MEKE", CS%include_grad_meke, &
                  "If true, adds the acceleration due to the lateral\n"//&
                  "gradient of MEKE.", default=.false.)
   call get_param(param_file, mdl, "SPLIT_BOTTOM_STRESS", CS%split_bottom_stress, &
