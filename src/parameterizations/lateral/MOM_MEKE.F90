@@ -815,10 +815,10 @@ subroutine grad_MEKE(MEKE, G, GV, US, vStruct, dEdx, dEdy)
   real, dimension(SZI_(G),SZJ_(G)) :: noise !< Red noise
 
   if (allocated(MEKE%noise)) then
-      noise(i,j) = MEKE%noise(i,j)
+      noise(i,j) = MEKE%noise(i,j) * MEKE%grad_factor
   else
     do j = G%jsc-1, G%jec+1 ; do i = G%isc-1, G%iec+1
-      noise(i,j) = 1.
+      noise(i,j) = MEKE%grad_factor
     enddo ; enddo
   endif
 
@@ -1023,6 +1023,8 @@ logical function MEKE_init(Time, G, param_file, diag, CS, MEKE, restart_CS)
                  units="nondim", default=0.0)
   call get_param(param_file, mdl, "MEKE_GRAD_USE_VSTRUCT", MEKE%grad_use_vstruct, &
                  "If True, then grad MEKE has vertical structure.", default=.true.)
+  call get_param(param_file, mdl, "MEKE_GRAD_FACTOR", MEKE%grad_factor, &
+                 "Scale factor for grad MEKE.", units="1", default=1.)
   call get_param(param_file, mdl, "MEKE_GRAD_NOISE_T", CS%MEKE_grad_noise_t, &
                  "Timescale for redness of stochastic multiplied to gradient\n"//&
                  "of MEKE. Ignored if negative.", default=-1., units='s', do_not_log=.true.)
