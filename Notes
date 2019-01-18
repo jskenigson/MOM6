@@ -1,0 +1,4 @@
+egrep -ri "^ *call *get_param *\(" src | cut -d',' -f 3 | sed 's:[ "]::g' | sed "s:'::g" | sed -n 's:^\([A-Z_0-9]*\)$:\1:p' | sort | uniq | wc
+   1111    1111   18457
+egrep "=" `find [oilc]* -name MOM_parameter_doc.all` | sed 's:!.*:: ; s/.*://' | sort | uniq -c | wc
+   1693    6744   70436
