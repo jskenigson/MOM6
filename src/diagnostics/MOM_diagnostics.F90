@@ -155,7 +155,7 @@ end type diagnostics_CS
 type, public :: surface_diag_IDs ; private
   !>@{ Diagnostic IDs for 2-d surface and bottom flux and state fields
   !Diagnostic IDs for 2-d surface and bottom fields
-  integer :: id_zos  = -1, id_zossq  = -1
+  integer :: id_zos  = -1, id_zossq  = -1, id_zosga = -1
   integer :: id_volo = -1, id_speed  = -1
   integer :: id_ssh  = -1, id_ssh_ga = -1
   integer :: id_sst  = -1, id_sst_sq = -1, id_sstcon = -1
@@ -1218,15 +1218,18 @@ subroutine post_surface_thermo_diags(IDs, G, GV, US, diag, dt_int, sfc_state, tv
   ! post the dynamic sea level, zos, and zossq.
   ! zos is ave_ssh with sea ice inverse barometer removed,
   ! and with zero global area mean.
-  if (IDs%id_zos > 0 .or. IDs%id_zossq > 0) then
+  if (IDs%id_zos > 0 .or. IDs%id_zossq > 0 .or. IDs%id_zosga > 0) then
     zos(:,:) = 0.0
     do j=js,je ; do i=is,ie
       zos(i,j) = ssh_ibc(i,j)
     enddo ; enddo
     zos_area_mean = global_area_mean(zos, G)
-    do j=js,je ; do i=is,ie
-      zos(i,j) = zos(i,j) - G%mask2dT(i,j)*zos_area_mean
-    enddo ; enddo
+    if (IDs%id_zosga > 0) call post_data(IDs%id_zosga, zos_area_mean, diag)
+    if (IDs%id_zos > 0 .or. IDs%id_zossq > 0) then
+      do j=js,je ; do i=is,ie
+        zos(i,j) = zos(i,j) - G%mask2dT(i,j)*zos_area_mean
+      enddo ; enddo
+    endif
     if (IDs%id_zos > 0) call post_data(IDs%id_zos, zos, diag, mask=G%mask2dT)
     if (IDs%id_zossq > 0) then
       do j=js,je ; do i=is,ie
@@ -1727,6 +1730,9 @@ subroutine register_surface_diags(Time, G, IDs, diag, tv)
   IDs%id_zos = register_diag_field('ocean_model', 'zos', diag%axesT1, Time,&
       standard_name = 'sea_surface_height_above_geoid',                   &
       long_name= 'Sea surface height above geoid', units='m')
+  IDs%id_zosga = register_scalar_field('ocean_model', 'zosga', Time, diag, &
+      standard_name = 'global_average_sea_surface_height_above_geoid', &
+      long_name= 'Global average sea surface height above geoid', units='m')
   IDs%id_zossq = register_diag_field('ocean_model', 'zossq', diag%axesT1, Time,&
       standard_name='square_of_sea_surface_height_above_geoid',             &
       long_name='Square of sea surface height above geoid', units='m2')

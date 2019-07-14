@@ -120,6 +120,9 @@ type, public :: surface_forcing_CS ; private
   logical :: adjust_net_fresh_water_to_zero !< Adjust net surface fresh-water (with restoring) to zero
   logical :: use_net_FW_adjustment_sign_bug !< Use the wrong sign when adjusting net FW
   logical :: adjust_net_fresh_water_by_scaling !< Adjust net surface fresh-water w/o moving zero contour
+  real    :: sea_level_nudging_vscale       !< If positive, calculate a virtual precipitation proportional
+                                            !! to precip+runoff so that the global sea-level is nudged towards
+                                            !! zero at a rate <P+R>/d where d is this parameter. [m]
   logical :: mask_srestore_under_ice        !< If true, use an ice mask defined by frazil criteria
                                             !! for salinity restoring.
   real    :: ice_salt_concentration         !< Salt concentration for sea ice [kg/kg]
@@ -243,6 +246,10 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, G, US, CS, sfc
 
   real :: C_p                 ! heat capacity of seawater [J degC-1 kg-1]
   real :: sign_for_net_FW_bug ! Should be +1. but an old bug can be recovered by using -1.
+  real :: mean_sea_level ! Spatial average of sea-level from surface state that includes
+                         ! adjustment for weight of sea-ice (i.e. position of sea-level if
+                         ! sea-ice had melted). [m]
+  real :: adjustment_fraction ! perturbation multiplier of P+S+R+C to nudge sea-level to zero. [nondim]
 
   call cpu_clock_begin(id_clock_forcing)
 
@@ -401,7 +408,6 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, G, US, CS, sfc
     enddo ; enddo
   endif
 
-
   ! obtain fluxes from IOB; note the staggering of indices
   i0 = is - isc_bnd ; j0 = js - jsc_bnd
   do j=js,je ; do i=is,ie
@@ -537,6 +543,27 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, G, US, CS, sfc
       enddo ; enddo
     endif
 
+  endif
+
+  ! Global sea-level nudging (via vprec)
+  if (CS%sea_level_nudging_vscale>0.) then
+    do j=js,je ; do i=is,ie
+      ! Net of incoming fields [kg m-2 s-1] that will effectively be scaled by setting vprec
+      net_FW(i,j) = ( ( fluxes%lprec(i,j) + fluxes%lrunoff(i,j) ) + &
+                      ( fluxes%fprec(i,j) + fluxes%frunoff(i,j) ) ) * G%mask2dT(i,j)
+      ! Volume of ocean above (below) z=0 [m3]
+      work_sum(i,j) = sfc_state%sea_lev(i,j) * G%mask2dT(i,j) * G%areaT(i,j)
+    enddo ; enddo
+    ! Mean sea-level (relative to z=0 m) [m]
+    mean_sea_level = reproducing_sum(work_sum(:,:), isr, ier, jsr, jer) / CS%area_surf
+    ! Fraction of net_FW to adjust by. We limit this by -1 so that we do not
+    ! change the sign of forcing. [nondim]
+    adjustment_fraction = max( -1., - mean_sea_level / CS%sea_level_nudging_vscale )
+    if (is_root_pe()) write(0,*) 'MSL =', mean_sea_level, 'AF =',adjustment_fraction
+    ! Adjustment that effectively scale net_FW [kg m-2 s-1]
+    do j=js,je ; do i=is,ie
+      fluxes%vprec(i,j) = fluxes%vprec(i,j) + adjustment_fraction * net_FW(i,j)
+    enddo ; enddo
   endif
 
   ! Set the wind stresses and ustar.
@@ -1258,6 +1285,21 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS)
                  "boundary type without any further adjustments to drive "//&
                  "the ocean dynamics.  The actual net mass source may differ "//&
                  "due to internal corrections.", default=.false.)
+  call get_param(param_file, mdl, "SEA_LEVEL_NUDGING_VSCALE", &
+                 CS%sea_level_nudging_vscale, &
+                 "If positive, calculate a virtual precipitation proportional to"//&
+                 "precip+runoff so that the global sea-level is nudged towards"//&
+                 "zero at a rate <P+R>/d where d is this parameter.",&
+                 units="m", default=0.)
+  ! For a global hydrological cycle of 3 mm/day then these are 
+  ! the broad restoring time scales for global mean sea-level:
+  !   SEA_LEVEL_NUDGING_VSCALE = 1.1     has restoring time scale of ~ 1 year
+  !   SEA_LEVEL_NUDGING_VSCALE = 0.9     has restoring time scale of ~ 1 month
+  !   SEA_LEVEL_NUDGING_VSCALE = 0.003   has restoring time scale of ~ 1 day
+  if (CS%sea_level_nudging_vscale>0.) then
+    if (CS%adjust_net_fresh_water_to_zero) call MOM_error(FATAL, &
+       "SEA_LEVEL_NUDGING_VSCALE>0 cannot be used with ADJUST_NET_FRESH_WATER_TO_ZERO")
+  endif
 
   call get_param(param_file, mdl, "WIND_STAGGER", stagger, &
                  "A case-insensitive character string to indicate the "//&
