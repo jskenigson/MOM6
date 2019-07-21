@@ -559,7 +559,6 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, G, US, CS, sfc
     ! Fraction of net_FW to adjust by. We limit this by -1 so that we do not
     ! change the sign of forcing. [nondim]
     adjustment_fraction = max( -1., - mean_sea_level / CS%sea_level_nudging_vscale )
-    if (is_root_pe()) write(0,*) 'MSL =', mean_sea_level, 'AF =',adjustment_fraction
     ! Adjustment that effectively scale net_FW [kg m-2 s-1]
     do j=js,je ; do i=is,ie
       fluxes%vprec(i,j) = fluxes%vprec(i,j) + adjustment_fraction * net_FW(i,j)
