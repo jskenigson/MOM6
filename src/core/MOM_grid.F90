@@ -15,6 +15,7 @@ implicit none ; private
 
 public MOM_grid_init, MOM_grid_end, set_derived_metrics, set_first_direction
 public isPointInCell, hor_index_type, get_global_grid_size, rescale_grid_bathymetry
+public debug_point
 
 ! A note on unit descriptions in comments: MOM6 uses units that can be rescaled for dimensional
 ! consistency testing. These are noted in comments with units like Z, H, L, and T, along with
@@ -171,6 +172,19 @@ type, public :: ocean_grid_type
   real :: len_lon = 0.  !< The longitudinal (or x-coord) extent of physical domain
   real :: Rad_Earth = 6.378e6 !< The radius of the planet [m].
   real :: max_depth     !< The maximum depth of the ocean in depth units [Z ~> m].
+
+  ! These parameters are for single point, conditionals use for print-statement debugging.
+  ! To use, you need to add code which should not enter the production branches.
+  ! See debug_point() for documentation.
+  logical :: debug_point !< Will only be .true. if the global indexes i,j of a cell on the
+                         !! computational domain are i,j=debug_index_i,debug_index_j.
+                         !! See debug_point() for documentation.
+  integer :: debug_index_i !< Global i-index of cell to debug. See debug_point() for documentation.
+  integer :: debug_index_j !< Global j-index of cell to debug. See debug_point() for documentation.
+
+  contains
+    procedure :: debug => debug_point !< Method to ask if i,j are a point being debugged
+
 end type ocean_grid_type
 
 contains
@@ -200,7 +214,7 @@ subroutine MOM_grid_init(G, param_file, HI, global_indexing, bathymetry_at_vel)
 
   integer, allocatable, dimension(:) :: ibegin, iend, jbegin, jend
   character(len=40)  :: mod_nm  = "MOM_grid" ! This module's name.
-
+  integer :: debug_ij(2) ! global i,j of point to debug
 
   ! Read all relevant parameters and write them to the model log.
   call log_version(param_file, mod_nm, version, &
@@ -213,6 +227,9 @@ subroutine MOM_grid_init(G, param_file, HI, global_indexing, bathymetry_at_vel)
   call get_param(param_file, mod_nm, "NJBLOCK", njblock, "The number of blocks "// &
                  "in the y-direction on each processor (for openmp).", default=1, &
                  layoutParam=.true.)
+  call get_param(param_file, mod_nm, "DEBUG_POINT_IJ", debug_ij, &
+                 "Global i,j indices of point to debug.", &
+                 default=0, debuggingParam=.true.)
 
   if (present(HI)) then
     G%HI = HI
@@ -366,7 +383,44 @@ subroutine MOM_grid_init(G, param_file, HI, global_indexing, bathymetry_at_vel)
   G%HId2%IedB = G%HId2%ied ; G%HId2%JedB = G%HId2%jed
   G%HId2%IegB = G%HId2%ieg ; G%HId2%JegB = G%HId2%jeg
 
+  ! Single point debugging
+  G%debug_point = .false.
+  if (G%HI%isc<=debug_ij(1)-G%HI%idg_offset .and. &
+      G%HI%iec>=debug_ij(1)-G%HI%idg_offset .and. &
+      G%HI%jsc<=debug_ij(2)-G%HI%jdg_offset .and. &
+      G%HI%jec>=debug_ij(2)-G%HI%jdg_offset ) then
+    G%debug_point = .true.
+    G%debug_index_i = debug_ij(1)-G%HI%idg_offset
+    G%debug_index_j = debug_ij(2)-G%HI%jdg_offset
+    write(0,*) 'debug_index',G%debug_index_i,G%debug_index_j
+  endif
+
 end subroutine MOM_grid_init
+
+!> Returns true if local indexes i,j correspond to a cell on the computational
+!! that has global indexes ig,jg=DEBUG_POINT_IJ. This method is to be used
+!! from within an i,j loop over T-points on the computational domain.
+!!
+!! This method should not be used in normal production code. It is for development
+!! and facilitates print-statement debugging for a specific i,j location. For
+!! example, wherever the ocean_grid_type is accessible (usually called "G"),
+!! then you can do things like:
+!!
+!! @code[.fortran]
+!!     if (G%debug(i,j)) print *,'debugging',tv%T(i,j,1)
+!! @endcode
+!!
+!! The method uses the parameter DEBUG_POINT_IJ (e.g. DEBUG_POINT_IJ=101,92).
+logical function debug_point(G, i, j)
+  class(ocean_grid_type), intent(in) :: G !< The horizontal grid structure
+  integer,                intent(in) :: i !< Current local i-index to test
+  integer,                intent(in) :: j !< Current local j-index to test
+
+  debug_point = .false. ! Default result
+  if (.not. G%debug_point) return ! The tile/core does not have a relevant cell
+  if (i==G%debug_index_i .and. j==G%debug_index_j) debug_point = .true.
+
+end function debug_point
 
 !> rescale_grid_bathymetry permits a change in the internal units for the bathymetry on the grid,
 !! both rescaling the depths and recording the new internal units.
@@ -444,6 +498,7 @@ subroutine set_derived_metrics(G)
     if (G%areaBu(I,J) <= 0.0) G%areaBu(I,J) = G%dxBu(I,J) * G%dyBu(I,J)
     G%IareaBu(I,J) =  Adcroft_reciprocal(G%areaBu(I,J))
   enddo ; enddo
+
 end subroutine set_derived_metrics
 
 !> Adcroft_reciprocal(x) = 1/x for |x|>0 or 0 for x=0.
