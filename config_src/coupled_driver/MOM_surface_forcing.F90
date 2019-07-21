@@ -1293,7 +1293,7 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS)
   ! For a global hydrological cycle of 3 mm/day then these are 
   ! the broad restoring time scales for global mean sea-level:
   !   SEA_LEVEL_NUDGING_VSCALE = 1.1     has restoring time scale of ~ 1 year
-  !   SEA_LEVEL_NUDGING_VSCALE = 0.9     has restoring time scale of ~ 1 month
+  !   SEA_LEVEL_NUDGING_VSCALE = 0.09    has restoring time scale of ~ 1 month
   !   SEA_LEVEL_NUDGING_VSCALE = 0.003   has restoring time scale of ~ 1 day
   if (CS%sea_level_nudging_vscale>0.) then
     if (CS%adjust_net_fresh_water_to_zero) call MOM_error(FATAL, &
