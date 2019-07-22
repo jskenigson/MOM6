@@ -1290,7 +1290,7 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS)
                  "precip+runoff so that the global sea-level is nudged towards"//&
                  "zero at a rate <P+R>/d where d is this parameter.",&
                  units="m", default=0.)
-  ! For a global hydrological cycle of 3 mm/day then these are 
+  ! For a global hydrological cycle of 3 mm/day then these are
   ! the broad restoring time scales for global mean sea-level:
   !   SEA_LEVEL_NUDGING_VSCALE = 1.1     has restoring time scale of ~ 1 year
   !   SEA_LEVEL_NUDGING_VSCALE = 0.09    has restoring time scale of ~ 1 month
