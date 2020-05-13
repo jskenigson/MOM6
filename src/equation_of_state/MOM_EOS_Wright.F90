@@ -73,6 +73,65 @@ real, parameter :: c3 = 5.140652e-2, c4 = -2.302158e2, c5 = -3.079464
 
 contains
 
+!> Sea-water density [kg m-3] as a function of salinity (S [PSU]),
+!! potential temperature (T [degC]), and pressure [Pa], using the expression
+!! from Wright, 1997, J. Atmos. Ocean. Tech., 14, 735-740.
+!! If rho_ref is present, an anomaly from rho_ref is returned.
+elemental real function wright_density(T, S, pressure, rho_ref)
+  real,           intent(in) :: T        !< Potential temperature relative to the surface [degC].
+  real,           intent(in) :: S        !< Salinity [PSU].
+  real,           intent(in) :: pressure !< Pressure [Pa].
+  real, optional, intent(in) :: rho_ref  !< A reference density [kg m-3].
+  ! Local variables
+  real :: al0, p0, lambda, al_TS, p_TSp, lam_TS, pa_000
+
+  if (present(rho_ref)) then
+    pa_000 = (b0*(1.0 - a0*rho_ref) - rho_ref*c0)
+    al_TS = a1*T +a2*S
+    al0 = a0 + al_TS
+    p_TSp = pressure + (b4*S + T * (b1 + (T*(b2 + b3*T) + b5*S)))
+    lam_TS = c4*S + T * (c1 + (T*(c2 + c3*T) + c5*S))
+
+    ! The following two expressions are mathematically equivalent.
+    ! wright_density = (b0 + p0_TSp) / ((c0 + lam_TS) + al0*(b0 + p0_TSp)) - rho_ref
+    !### The division here could be a reciprocal.
+    wright_density = (pa_000 + (p_TSp - rho_ref*(p_TSp*al0 + (b0*al_TS + lam_TS)))) / &
+             ( (c0 + lam_TS) + al0*(b0 + p_TSp) )
+  else
+    al0 = (a0 + a1*T) +a2*S
+    p0 = (b0 + b4*S) + T * (b1 + T*(b2 + b3*T) + b5*S)
+    lambda = (c0 +c4*S) + T * (c1 + T*(c2 + c3*T) + c5*S)
+    !### The division here could be a reciprocal. The sum of prsesure+p0 could be a register.
+    wright_density = (pressure + p0) / (lambda + al0*(pressure + p0))
+  endif
+
+end function wright_density
+
+!> Seawater specific volume [m3 kg-1] from salinity (S [PSU]),
+!! potential temperature (T [degC]) and pressure [Pa], using the expression
+!! from Wright, 1997, J. Atmos. Ocean. Tech., 14, 735-740.
+!! If spv_ref is present, an anomaly from spv_ref is returned.
+elemental real function wright_specific_volume(T, S, pressure, spv_ref)
+  real,           intent(in) :: T        !< Potential temperature relative to the surface [degC].
+  real,           intent(in) :: S        !< Salinity [PSU].
+  real,           intent(in) :: pressure !< Pressure [Pa].
+  real, optional, intent(in) :: spv_ref  !< A reference specific volume [m3 kg-1].
+  ! Local variables
+  real :: al0, p0, lambda
+
+    al0 = (a0 + a1*T) +a2*S
+    p0 = (b0 + b4*S) + T * (b1 + T*((b2 + b3*T)) + b5*S)
+    lambda = (c0 +c4*S) + T * (c1 + T*((c2 + c3*T)) + c5*S)
+
+    !### The division here could be a reciprocal. The sum of prsesure+p0 could be a register.
+    if (present(spv_ref)) then
+      wright_specific_volume = (lambda + (al0 - spv_ref)*(pressure + p0)) / (pressure + p0)
+    else
+      wright_specific_volume = (lambda + al0*(pressure + p0)) / (pressure + p0)
+    endif
+
+end function wright_specific_volume
+
 !> This subroutine computes the in situ density of sea water (rho in
 !! [kg m-3]) from salinity (S [PSU]), potential temperature
 !! (T [degC]), and pressure [Pa].  It uses the expression from
@@ -84,22 +143,7 @@ subroutine calculate_density_scalar_wright(T, S, pressure, rho, rho_ref)
   real,           intent(out) :: rho      !< In situ density [kg m-3].
   real, optional, intent(in)  :: rho_ref  !< A reference density [kg m-3].
 
-! *====================================================================*
-! *  This subroutine computes the in situ density of sea water (rho in *
-! *  [kg m-3]) from salinity (S [PSU]), potential temperature  *
-! *  (T [degC]), and pressure [Pa].  It uses the expression from    *
-! *  Wright, 1997, J. Atmos. Ocean. Tech., 14, 735-740.                *
-! *  Coded by R. Hallberg, 7/00                                        *
-! *====================================================================*
-
-  real, dimension(1) :: T0, S0, pressure0, rho0
-
-  T0(1) = T
-  S0(1) = S
-  pressure0(1) = pressure
-
-  call calculate_density_array_wright(T0, S0, pressure0, rho0, 1, 1, rho_ref)
-  rho = rho0(1)
+  rho = wright_density(T, S, pressure, rho_ref)
 
 end subroutine calculate_density_scalar_wright
 
@@ -118,27 +162,10 @@ subroutine calculate_density_array_wright(T, S, pressure, rho, start, npts, rho_
 
   ! Original coded by R. Hallberg, 7/00, anomaly coded in 3/18.
   ! Local variables
-  real :: al0, p0, lambda
-  real :: al_TS, p_TSp, lam_TS, pa_000
-  integer :: j
+  integer :: je
 
-  if (present(rho_ref)) pa_000 = (b0*(1.0 - a0*rho_ref) - rho_ref*c0)
-  if (present(rho_ref)) then ; do j=start,start+npts-1
-    al_TS = a1*T(j) +a2*S(j)
-    al0 = a0 + al_TS
-    p_TSp = pressure(j) + (b4*S(j) + T(j) * (b1 + (T(j)*(b2 + b3*T(j)) + b5*S(j))))
-    lam_TS = c4*S(j) + T(j) * (c1 + (T(j)*(c2 + c3*T(j)) + c5*S(j)))
-
-    ! The following two expressions are mathematically equivalent.
-    ! rho(j) = (b0 + p0_TSp) / ((c0 + lam_TS) + al0*(b0 + p0_TSp)) - rho_ref
-    rho(j) = (pa_000 + (p_TSp - rho_ref*(p_TSp*al0 + (b0*al_TS + lam_TS)))) / &
-             ( (c0 + lam_TS) + al0*(b0 + p_TSp) )
-  enddo ; else ; do j=start,start+npts-1
-    al0 = (a0 + a1*T(j)) +a2*S(j)
-    p0 = (b0 + b4*S(j)) + T(j) * (b1 + T(j)*(b2 + b3*T(j)) + b5*S(j))
-    lambda = (c0 +c4*S(j)) + T(j) * (c1 + T(j)*(c2 + c3*T(j)) + c5*S(j))
-    rho(j) = (pressure(j) + p0) / (lambda + al0*(pressure(j) + p0))
-  enddo ; endif
+  je = start+npts-1
+  rho(start:je) = wright_density(T(start:je), S(start:je), pressure(start:je), rho_ref)
 
 end subroutine calculate_density_array_wright
 
@@ -154,13 +181,8 @@ subroutine calculate_spec_vol_scalar_wright(T, S, pressure, specvol, spv_ref)
   real,           intent(out) :: specvol  !< in situ specific volume [m3 kg-1].
   real, optional, intent(in)  :: spv_ref  !< A reference specific volume [m3 kg-1].
 
-  ! Local variables
-  real, dimension(1) :: T0, S0, pressure0, spv0
+  specvol = wright_specific_volume(T, S, pressure, spv_ref)
 
-  T0(1) = T ; S0(1) = S ; pressure0(1) = pressure
-
-  call calculate_spec_vol_array_wright(T0, S0, pressure0, spv0, 1, 1, spv_ref)
-  specvol = spv0(1)
 end subroutine calculate_spec_vol_scalar_wright
 
 !> This subroutine computes the in situ specific volume of sea water (specvol in
@@ -179,20 +201,11 @@ subroutine calculate_spec_vol_array_wright(T, S, pressure, specvol, start, npts,
   real,     optional, intent(in)    :: spv_ref  !< A reference specific volume [m3 kg-1].
 
   ! Local variables
-  real :: al0, p0, lambda
-  integer :: j
+  integer :: je
 
-  do j=start,start+npts-1
-    al0 = (a0 + a1*T(j)) +a2*S(j)
-    p0 = (b0 + b4*S(j)) + T(j) * (b1 + T(j)*((b2 + b3*T(j))) + b5*S(j))
-    lambda = (c0 +c4*S(j)) + T(j) * (c1 + T(j)*((c2 + c3*T(j))) + c5*S(j))
+  je = start+npts-1
+  specvol(start:je) = wright_specific_volume(T(start:je), S(start:je), pressure(start:je), spv_ref)
 
-    if (present(spv_ref)) then
-      specvol(j) = (lambda + (al0 - spv_ref)*(pressure(j) + p0)) / (pressure(j) + p0)
-    else
-      specvol(j) = (lambda + al0*(pressure(j) + p0)) / (pressure(j) + p0)
-    endif
-  enddo
 end subroutine calculate_spec_vol_array_wright
 
 !> For a given thermodynamic state, return the thermal/haline expansion coefficients
