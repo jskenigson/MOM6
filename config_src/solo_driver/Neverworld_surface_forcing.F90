@@ -19,6 +19,7 @@ use MOM_variables, only : surface
 implicit none ; private
 
 public Neverworld_wind_forcing
+public Neverworld2_wind_forcing
 public Neverworld_buoyancy_forcing
 public Neverworld_surface_forcing_init
 
@@ -94,6 +95,7 @@ subroutine Neverworld_wind_forcing(sfc_state, forces, day, G, US, CS)
     if ((y > (0.8-off)) .and. (y <= (1-off))) then
       forces%taux(I,j) = forces%taux(I,j) + tau_max *( 1.5*( (y-1+off) - (0.1/PI)*sin(10.0*PI*(y-0.8+off)) ) )
     endif
+    forces%taux(I,j) = G%mask2dCu(I,j) * forces%taux(I,j)
   enddo ; enddo
 
   do J=js-1,Jeq ; do i=is,ie
@@ -111,6 +113,65 @@ subroutine Neverworld_wind_forcing(sfc_state, forces, day, G, US, CS)
 ! enddo ; enddo ; endif
 
 end subroutine Neverworld_wind_forcing
+
+!> Sets the surface wind stresses, forces%taux and forces%tauy for the
+!! Neverworld2 forcing configuration.
+subroutine Neverworld2_wind_forcing(sfc_state, forces, day, G, US, CS)
+  type(surface),                 intent(inout) :: sfc_state !< A structure containing fields that
+                                                         !! describe the surface state of the ocean.
+  type(mech_forcing),            intent(inout) :: forces !< A structure with the driving mechanical forces
+  type(time_type),               intent(in)    :: day    !< Time used for determining the fluxes.
+  type(ocean_grid_type),         intent(inout) :: G      !< Grid structure.
+  type(unit_scale_type),         intent(in)    :: US     !< A dimensional unit scaling type
+  type(Neverworld_surface_forcing_CS), pointer  :: CS     !< Control structure for this module.
+
+  ! Local variables
+  integer :: i, j, k
+  real :: lon, lat
+  real :: ydata(7) = (/ -70., -45., -15., 0., 15., 45., 70. /)
+  real :: taudt(7) = (/ 0., 0.2, -0.1, -0.02, -0.1, 0.1, 0. /)
+
+  ! Allocate the forcing arrays, if necessary.
+  call allocate_mech_forcing(G, forces, stress=.true.)
+
+  k = 1
+  do j=G%jsd,G%jed ; do I=G%IsdB,G%IedB
+    
+    lon = G%geoLonCu(I,j)
+    lat = G%geoLatCu(I,j)
+    do while (lat>=ydata(k+1).and.k<6)
+      k = k+1
+    enddo
+
+    forces%taux(I,j) = taudt(k) + ( taudt(k+1) - taudt(k) ) * scurve(lat-ydata(k), ydata(k+1)-ydata(k))
+    forces%taux(I,j) = G%mask2dCu(I,j) * forces%taux(I,j)
+  enddo ; enddo
+
+  do J=G%JsdB,G%JedB ; do i=G%isd,G%ied
+    forces%tauy(i,J) = G%mask2dCv(i,J) * 0.0  ! Change this to the desired expression.
+  enddo ; enddo
+
+  !    Set the surface friction velocity, in units of m s-1.  ustar
+  !  is always positive.
+! if (associated(forces%ustar)) then ; do j=js,je ; do i=is,ie
+!   !  This expression can be changed if desired, but need not be.
+!   forces%ustar(i,j) = G%mask2dT(i,j) * sqrt((CS%gust_const + &
+!           sqrt(0.5*(forces%taux(I-1,j)**2 + forces%taux(I,j)**2) + &
+!                0.5*(forces%tauy(i,J-1)**2 + forces%tauy(i,J)**2))) * &
+!            (US%L_to_Z / CS%Rho0) )
+! enddo ; enddo ; endif
+
+end subroutine Neverworld2_wind_forcing
+
+!> Returns the value of a cosine-bell function evaluated at x/L
+real function scurve(x,L)
+  real , intent(in) :: x       !< non-dimensional position
+  real , intent(in) :: L       !< non-dimensional width
+  real :: s
+
+  s = x/L
+  scurve = (3. - 2.*s) * (s*s)
+end function scurve
 
 !> Returns the value of a cosine-bell function evaluated at x/L
 real function cosbell(x,L)
