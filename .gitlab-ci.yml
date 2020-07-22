@@ -134,6 +134,18 @@ gnu.testing:
     - (echo '#!/bin/bash';echo '. ./local-py/bin/activate';echo 'make MPIRUN="srun -mblock --exclusive" test -s -j 5') > job.sh
     - sbatch --clusters=c3,c4 --nodes=5 --time=0:10:00 --account=gfdl_o --qos=debug --job-name=MOM6.gnu.testing --output=log.$CI_PIPELINE_ID --wait job.sh || cat log.$CI_PIPELINE_ID && make test
 
+intel.testing:
+  stage: run
+  tags:
+    - ncrc4
+  script:
+    - cd .testing
+    - module unload darshan; module load cray-netcdf cray-python; module swap intel/18.0.6.288
+    - python3 -m venv local-py && . ./local-py/bin/activate && pip install netcdf4
+    - make MKMF_TEMPLATE=deps/mkmf/templates/ncrc-intel.mk -s -j
+    - (echo '#!/bin/bash';echo '. ./local-py/bin/activate';echo 'make MPIRUN="srun -mblock --exclusive" test -s -j 5') > job.sh
+    - sbatch --clusters=c3,c4 --nodes=5 --time=0:10:00 --account=gfdl_o --qos=debug --job-name=MOM6.gnu.testing --output=log.$CI_PIPELINE_ID --wait job.sh || cat log.$CI_PIPELINE_ID && make test
+
 # Tests
 gnu:non-symmetric:
   stage: tests
