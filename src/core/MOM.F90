@@ -2902,7 +2902,7 @@ subroutine MOM_timing_init(CS)
  if (CS%stoch_eos_CS%stanley_coeff>0.0) then
   id_clock_stoch = cpu_clock_id('(Stochastic EOS)', grain=CLOCK_MODULE)
   id_clock_varT = cpu_clock_id('(SGS Temperature Variance)', grain=CLOCK_MODULE)
- end
+ endif
 
 end subroutine MOM_timing_init
 
