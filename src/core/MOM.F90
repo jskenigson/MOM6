@@ -2899,10 +2899,8 @@ subroutine MOM_timing_init(CS)
  if (CS%offline_tracer_mode) then
   id_clock_offline_tracer = cpu_clock_id('Ocean offline tracers', grain=CLOCK_SUBCOMPONENT)
  endif
- if (CS%stoch_eos_CS%stanley_coeff>0.0) then
   id_clock_stoch = cpu_clock_id('(Stochastic EOS)', grain=CLOCK_MODULE)
   id_clock_varT = cpu_clock_id('(SGS Temperature Variance)', grain=CLOCK_MODULE)
- endif
 
 end subroutine MOM_timing_init
 
