@@ -1,7 +1,6 @@
 !> Provides the ocean stochastic equation of state
 module MOM_stoch_eos
 ! This file is part of MOM6. See LICENSE.md for the license.
-use mpp_mod,             only : cpu_clock_id, cpu_clock_begin, cpu_clock_end, CLOCK_ROUTINE
 use MOM_grid,            only : ocean_grid_type
 use MOM_hor_index,       only : hor_index_type
 use MOM_file_parser,     only : get_param, param_file_type
@@ -31,8 +30,6 @@ type(PRNG)  ::  rn_CS
 !integer(8) :: npts
 !real :: pi
 logical first_time
-integer :: id_clock_stoch
-integer :: id_clock_tvar
   
 type, public :: MOM_stoch_eos_CS 
   real,public  ALLOCABLE_, dimension(NIMEM_,NJMEM_) :: pattern
@@ -89,8 +86,6 @@ contains
         enddo
      enddo
   endif
-  
-  id_clock_stoch = cpu_clock_id('(MOM_stoch_eos)', grain=CLOCK_ROUTINE)
 
   !stoch_eos_CS%id_stoch_eos = register_diag_field('ocean_model', 'stoch_eos', diag%axesT1, Time, &
   !    'random pattern for EOS', 'None')
@@ -115,7 +110,6 @@ contains
   integer :: yr,mo,dy,hr,mn,sc
   real                                   :: phi,ubar,vbar
 
-  call cpu_clock_begin(id_clock_stoch)
   call random_2d_constructor(rn_CS, G%HI, Time, seed)
   call random_2d_norm(rn_CS, G%HI, rgauss)
   ! advance AR(1)
@@ -128,7 +122,6 @@ contains
         stoch_eos_CS%phi(i,j)=phi
      enddo
   enddo
-  call cpu_clock_end(id_clock_stoch)
   
   !print*,'stoch_run ubar',minval(u),maxval(u),minval(v),maxval(v)
   !print*,'stoch_run rp',minval(random_pattern),maxval(random_pattern),minval(rgauss),maxval(rgauss)
