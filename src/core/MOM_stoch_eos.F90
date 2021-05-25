@@ -159,25 +159,36 @@ contains
   if (.not. associated(tv%varT)) call safe_alloc_ptr(tv%varT, G%isd, G%ied, G%jsd, G%jed, GV%ke)
   do k=1,G%ke
      do j=G%isc-1,G%iec+1
-        do i=G%jsc-1,G%jec+1
-           hl(1) = h(i,j,k) * G%mask2dT(i,j)
-           hl(2) = h(i-1,j,k) * G%mask2dCu(I-1,j)
-           hl(3) = h(i+1,j,k) * G%mask2dCu(I,j)
-           hl(4) = h(i,j-1,k) * G%mask2dCv(i,J-1)
-           hl(5) = h(i,j+1,k) * G%mask2dCv(i,J)
-           r_sm_H = 1. / ( ( hl(1) + ( ( hl(2) + hl(3) ) + ( hl(4) + hl(5) ) ) ) + GV%H_subroundoff )
-           ! Mean of T
-           Tl(1) = tv%T(i,j,k) ; Tl(2) = tv%T(i-1,j,k) ; Tl(3) = tv%T(i+1,j,k)
-           Tl(4) = tv%T(i,j-1,k) ; Tl(5) = tv%T(i,j+1,k)
-           mn_T = ( hl(1)*Tl(1) + ( ( hl(2)*Tl(2) + hl(3)*Tl(3) ) + ( hl(4)*Tl(4) + hl(5)*Tl(5) ) ) ) * r_sm_H
-           ! Adjust T vectors to have zero mean
-           Tl(:) = Tl(:) - mn_T ; mn_T = 0.
-           ! Variance of T
-           mn_T2 = ( hl(1)*Tl(1)*Tl(1) + ( ( hl(2)*Tl(2)*Tl(2) + hl(3)*Tl(3)*Tl(3) ) &
+        do i=G%jsc-1,G%jec+1		
+		   !manually mask the Nordic Seas
+		   if ((G%geoLatT(i,j)>=64.0) .and. (G%geoLatT(i,j)<=80.0) &
+		     ( mod(G%geoLonT(i,j)+360.0,360.0) >= 0.0) &
+			 ( mod(G%geoLonT(i,j)+360.0,360.0) <= 20.0)) then
+		     tv%varT(i,j,k) = 0.0	 
+		   else if ((G%geoLatT(i,j)>=64.0) .and. (G%geoLatT(i,j)<=80.0) &
+		     ( mod(G%geoLonT(i,j)+360.0,360.0) >= 320.0) &
+			 ( mod(G%geoLonT(i,j)+360.0,360.0) <= 360.0)) then	
+             tv%varT(i,j,k) = 0.0	 			 
+		   else
+             hl(1) = h(i,j,k) * G%mask2dT(i,j)
+             hl(2) = h(i-1,j,k) * G%mask2dCu(I-1,j)
+             hl(3) = h(i+1,j,k) * G%mask2dCu(I,j)
+             hl(4) = h(i,j-1,k) * G%mask2dCv(i,J-1)
+             hl(5) = h(i,j+1,k) * G%mask2dCv(i,J)
+             r_sm_H = 1. / ( ( hl(1) + ( ( hl(2) + hl(3) ) + ( hl(4) + hl(5) ) ) ) + GV%H_subroundoff )
+             ! Mean of T
+             Tl(1) = tv%T(i,j,k) ; Tl(2) = tv%T(i-1,j,k) ; Tl(3) = tv%T(i+1,j,k)
+             Tl(4) = tv%T(i,j-1,k) ; Tl(5) = tv%T(i,j+1,k)
+             mn_T = ( hl(1)*Tl(1) + ( ( hl(2)*Tl(2) + hl(3)*Tl(3) ) + ( hl(4)*Tl(4) + hl(5)*Tl(5) ) ) ) * r_sm_H
+             ! Adjust T vectors to have zero mean
+             Tl(:) = Tl(:) - mn_T ; mn_T = 0.
+             ! Variance of T
+             mn_T2 = ( hl(1)*Tl(1)*Tl(1) + ( ( hl(2)*Tl(2)*Tl(2) + hl(3)*Tl(3)*Tl(3) ) &
                                          + ( hl(4)*Tl(4)*Tl(4) + hl(5)*Tl(5)*Tl(5) ) ) ) * r_sm_H
-           ! Variance should be positive but round-off can violate this. Calculating
-           ! variance directly would fix this but requires more operations.
-           tv%varT(i,j,k) = stoch_eos_CS%stanley_coeff * max(0., mn_T2)
+             ! Variance should be positive but round-off can violate this. Calculating
+             ! variance directly would fix this but requires more operations.
+             tv%varT(i,j,k) = stoch_eos_CS%stanley_coeff * max(0., mn_T2)
+		   endif		   
         enddo
      enddo
   enddo
