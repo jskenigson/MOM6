@@ -186,7 +186,7 @@ contains
      do k=1,G%ke
         do j=G%jsc-1,G%jec+1
            do i=G%isc-1,G%iec+1
-               tv%varT(i,j,k) = exp (stoch_eos_CS%pattern(i,j)) * tv%varT(i,j,k)
+               tv%varT(i,j,k) = (stoch_eos_CS%pattern(i,j) * stoch_eos_CS%pattern(i,j)) * tv%varT(i,j,k)
            enddo
         enddo
      enddo
