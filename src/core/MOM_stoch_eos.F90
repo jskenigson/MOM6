@@ -159,8 +159,8 @@ contains
   ! still a poor approximation in the interior when coordinates are strongly tilted.
   if (.not. associated(tv%varT)) call safe_alloc_ptr(tv%varT, G%isd, G%ied, G%jsd, G%jed, GV%ke)
   do k=1,G%ke
-     do j=G%isc-1,G%iec+1
-        do i=G%jsc-1,G%jec+1
+     do j=G%isc,G%iec
+        do i=G%jsc,G%jec
            hl(1) = h(i,j,k) * G%mask2dT(i,j)
            hl(2) = h(i-1,j,k) * G%mask2dCu(I-1,j)
            hl(3) = h(i+1,j,k) * G%mask2dCu(I,j)
@@ -184,10 +184,9 @@ contains
   enddo
   ! if stochastic, perturb
   if (stoch_eos_CS%use_stoch_eos) then
-     call pass_var(stoch_eos_CS%pattern, G%Domain)
      do k=1,G%ke
-        do j=G%jsc-1,G%jec+1
-           do i=G%isc-1,G%iec+1
+        do j=G%jsc,G%jec
+           do i=G%isc,G%iec
                tv%varT(i,j,k) = exp (stoch_eos_CS%pattern(i,j)) * tv%varT(i,j,k)
            enddo
         enddo
