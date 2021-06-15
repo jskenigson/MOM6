@@ -158,8 +158,8 @@ contains
   ! still a poor approximation in the interior when coordinates are strongly tilted.
   if (.not. associated(tv%varT)) call safe_alloc_ptr(tv%varT, G%isd, G%ied, G%jsd, G%jed, GV%ke)
   do k=1,G%ke
-     do j=G%isc,G%iec
-        do i=G%jsc,G%jec
+     do j=G%jsc,G%jec
+        do i=G%isc,G%iec
            hl(1) = h(i,j,k) * G%mask2dT(i,j)
            hl(2) = h(i-1,j,k) * G%mask2dCu(I-1,j)
            hl(3) = h(i+1,j,k) * G%mask2dCu(I,j)
