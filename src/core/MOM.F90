@@ -998,8 +998,6 @@ subroutine step_MOM_dynamics(forces, p_surf_begin, p_surf_end, dt, dt_thermo, &
   if (CS%stoch_eos_CS%use_stoch_eos) call MOM_stoch_eos_run(G,u,v,dt_thermo,Time_local,CS%stoch_eos_CS,CS%diag)
   call cpu_clock_end(id_clock_stoch)
   call cpu_clock_begin(id_clock_varT)
-  call pass_var(h, G%Domain,clock=id_clock_pass,halo=1)
-  call pass_var(CS%tv%T, G%Domain,clock=id_clock_pass,halo=1)
   call MOM_calc_varT(G,GV,h,CS%tv,CS%stoch_eos_CS)
   call pass_var(CS%tv%varT, G%Domain,clock=id_clock_pass,halo=1)
   call cpu_clock_end(id_clock_varT)
