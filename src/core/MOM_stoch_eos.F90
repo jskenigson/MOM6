@@ -12,7 +12,6 @@ use MOM_diag_mediator,   only : register_diag_field,post_data,diag_ctrl,safe_all
 use MOM_variables,       only : thermo_var_ptrs
 use MOM_verticalGrid,    only : verticalGrid_type
 use MOM_restart,         only : register_restart_field
-use MOM_domains,         only : pass_var
 !use random_numbers_mod, only : getRandomNumbers,initializeRandomNumberStream,randomNumberStream
 
 implicit none
