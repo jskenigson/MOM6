@@ -678,8 +678,6 @@ subroutine thickness_diffuse_full(h, e, Kh_u, Kh_v, tv, uhD, vhD, cg1, dt, G, GV
   real :: mn_T2         ! mean of T**2 in local stencil [degC]
   real :: hl(5)         ! Copy of local stencil of H [H ~> m]
   real :: r_sm_H        ! Reciprocal of sum of H in local stencil [H-1 ~> m-1]
-  real, dimension(SZI_(G), SZJ_(G), SZK_(G)) :: Tsgs2 ! Sub-grid temperature variance [degC2]
-
   real, dimension(SZIB_(G), SZJ_(G), SZK_(G)+1) :: diag_sfn_x, diag_sfn_unlim_x ! Diagnostics
   real, dimension(SZI_(G), SZJB_(G), SZK_(G)+1) :: diag_sfn_y, diag_sfn_unlim_y ! Diagnostics
   logical :: present_int_slope_u, present_int_slope_v
@@ -722,7 +720,6 @@ subroutine thickness_diffuse_full(h, e, Kh_u, Kh_v, tv, uhD, vhD, cg1, dt, G, GV
 
   if (use_EOS) then
     halo = 1 ! Default halo to fill is 1
-    if (use_Stanley) halo = 2 ! Need wider valid halo for gradients of T
     call vert_fill_TS(h, tv%T, tv%S, CS%kappa_smooth*dt, T, S, G, GV, halo, larger_h_denom=.true.)
   endif
 
@@ -730,7 +727,7 @@ subroutine thickness_diffuse_full(h, e, Kh_u, Kh_v, tv, uhD, vhD, cg1, dt, G, GV
        "cg1 must be associated when using FGNV streamfunction.")
 
 !$OMP parallel default(none) shared(is,ie,js,je,h_avail_rsum,pres,h_avail,I4dt, use_Stanley, &
-!$OMP                               CS,G,GV,tv,h,h_frac,nz,uhtot,Work_u,vhtot,Work_v,Tsgs2,T, &
+!$OMP                               CS,G,GV,tv,h,h_frac,nz,uhtot,Work_u,vhtot,Work_v,T, &
 !$OMP                               diag_sfn_x, diag_sfn_y, diag_sfn_unlim_x, diag_sfn_unlim_y ) &
 !$OMP          private(hl,r_sm_H,Tl,mn_T,mn_T2)
   ! Find the maximum and minimum permitted streamfunction.
@@ -745,9 +742,6 @@ subroutine thickness_diffuse_full(h, e, Kh_u, Kh_v, tv, uhD, vhD, cg1, dt, G, GV
     h_frac(i,j,1) = 1.0
     pres(i,j,2) = pres(i,j,1) + (GV%g_Earth*GV%H_to_RZ) * h(i,j,1)
   enddo ; enddo
-  if (use_Stanley) then
-      Tsgs2 = tv%varT
-  endif
 !$OMP do
   do j=js-1,je+1
     do k=2,nz ; do i=is-1,ie+1
@@ -779,7 +773,7 @@ subroutine thickness_diffuse_full(h, e, Kh_u, Kh_v, tv, uhD, vhD, cg1, dt, G, GV
 !$OMP                                  int_slope_u,KH_u,uhtot,h_frac,h_avail_rsum,  &
 !$OMP                                  uhD,h_avail,G_scale,Work_u,CS,slope_x,cg1,   &
 !$OMP                                  diag_sfn_x, diag_sfn_unlim_x,N2_floor,EOSdom_u, &
-!$OMP                                  use_stanley, Tsgs2,                          &
+!$OMP                                  use_Stanley,                                 &
 !$OMP                                  present_slope_x,G_rho0,Slope_x_PE,hN2_x_PE)  &
 !$OMP                          private(drdiA,drdiB,drdkL,drdkR,pres_u,T_u,S_u,      &
 !$OMP                                  drho_dT_u,drho_dS_u,hg2A,hg2B,hg2L,hg2R,haA, &
@@ -837,8 +831,8 @@ subroutine thickness_diffuse_full(h, e, Kh_u, Kh_v, tv, uhD, vhD, cg1, dt, G, GV
         if (use_Stanley) then
           ! Correction to the horizontal density gradient due to nonlinearity in
           ! the EOS rectifying SGS temperature anomalies
-          drdiA = drdiA + drho_dT_dT_u(I) * 0.5 * ( Tsgs2(i+1,j,k-1)-Tsgs2(i,j,k-1) )
-          drdiB = drdiB + drho_dT_dT_u(I) * 0.5 * ( Tsgs2(i+1,j,k)-Tsgs2(i,j,k) )
+          drdiA = drdiA + drho_dT_dT_u(I) * 0.5 * ( tv%varT(i+1,j,k-1)-tv%varT(i,j,k-1) )
+          drdiB = drdiB + drho_dT_dT_u(I) * 0.5 * ( tv%varT(i+1,j,k)-tv%varT(i,j,k) )
         endif
         if (find_work) drdi_u(I,k) = drdiB
 
@@ -1047,7 +1041,7 @@ subroutine thickness_diffuse_full(h, e, Kh_u, Kh_v, tv, uhD, vhD, cg1, dt, G, GV
 !$OMP                                  int_slope_v,KH_v,vhtot,h_frac,h_avail_rsum,  &
 !$OMP                                  vhD,h_avail,G_scale,Work_v,CS,slope_y,cg1,   &
 !$OMP                                  diag_sfn_y,diag_sfn_unlim_y,N2_floor,EOSdom_v,&
-!$OMP                                  use_stanley, Tsgs2,                          &
+!$OMP                                  use_Stanley,                                 &
 !$OMP                                  present_slope_y,G_rho0,Slope_y_PE,hN2_y_PE)  &
 !$OMP                          private(drdjA,drdjB,drdkL,drdkR,pres_v,T_v,S_v,      &
 !$OMP                                  drho_dT_v,drho_dS_v,hg2A,hg2B,hg2L,hg2R,haA, &
@@ -1102,8 +1096,8 @@ subroutine thickness_diffuse_full(h, e, Kh_u, Kh_v, tv, uhD, vhD, cg1, dt, G, GV
         if (use_Stanley) then
           ! Correction to the horizontal density gradient due to nonlinearity in
           ! the EOS rectifying SGS temperature anomalies
-          drdjA = drdjA + drho_dT_dT_v(I) * 0.5 * ( Tsgs2(i,j+1,k-1)-Tsgs2(i,j,k-1) )
-          drdjB = drdjB + drho_dT_dT_v(I) * 0.5 * ( Tsgs2(i,j+1,k)-Tsgs2(i,j,k) )
+          drdjA = drdjA + drho_dT_dT_v(I) * 0.5 * ( tv%varT(i,j+1,k-1)-tv%varT(i,j,k-1) )
+          drdjB = drdjB + drho_dT_dT_v(I) * 0.5 * ( tv%varT(i,j+1,k)-tv%varT(i,j,k) )
         endif
 
         if (find_work) drdj_v(i,k) = drdjB

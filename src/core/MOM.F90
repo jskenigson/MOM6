@@ -999,6 +999,7 @@ subroutine step_MOM_dynamics(forces, p_surf_begin, p_surf_end, dt, dt_thermo, &
   call cpu_clock_end(id_clock_stoch)
   call cpu_clock_begin(id_clock_varT)
   call MOM_calc_varT(G,GV,h,CS%tv,CS%stoch_eos_CS)
+  call pass_var(CS%tv%varT, G%Domain,clock=id_clock_pass,halo=1)
   call cpu_clock_end(id_clock_varT)
 
   if ((CS%t_dyn_rel_adv == 0.0) .and. CS%thickness_diffuse .and. CS%thickness_diffuse_first) then

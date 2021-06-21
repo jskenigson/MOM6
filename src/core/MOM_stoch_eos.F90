@@ -70,22 +70,22 @@ contains
   vd = var_desc("stoch_eos_pattern","nondim","Random pattern for stoch EOS",'h','1')
   call register_restart_field(stoch_eos_CS%pattern, vd, .false., restart_CS)
   ALLOC_(stoch_eos_CS%phi(G%isd:G%ied,G%jsd:G%jed)) ; stoch_eos_CS%phi(:,:) = 0.0
-  ALLOC_(l2_inv(G%isd:G%ied,G%jsd:G%jed)) ! currently allocating for data domain, should I which to compute domain?
-  ALLOC_(rgauss(G%isd:G%ied,G%jsd:G%jed)) ! currently allocating for data domain, should I which to compute domain?
+  ALLOC_(l2_inv(G%isd:G%ied,G%jsd:G%jed)) 
+  ALLOC_(rgauss(G%isd:G%ied,G%jsd:G%jed)) 
   call get_param(param_file, "MOM", "SEED_STOCH_EOS", seed, &
                  "Specfied seed for random number sequence ", default=0)
   call random_2d_constructor(rn_CS, G%HI, Time, seed)
   call random_2d_norm(rn_CS, G%HI, rgauss)
   ! fill array with approximation of grid area needed for decorrelation
   ! time-scale calculation
-  do j=G%jsd,G%jed
-     do i=G%isd,G%ied
+  do j=G%jsc,G%jec
+     do i=G%isc,G%iec
         l2_inv(i,j)=1.0/(G%dxT(i,j)**2+G%dyT(i,j)**2)
      enddo
   enddo 
   if (is_new_run(restart_CS)) then
-     do j=G%jsd,G%jed
-        do i=G%isd,G%ied
+     do j=G%jsc,G%jec
+        do i=G%isc,G%iec
            stoch_eos_CS%pattern(i,j)=amplitude*rgauss(i,j)
         enddo
      enddo
@@ -162,8 +162,8 @@ contains
   ! still a poor approximation in the interior when coordinates are strongly tilted.
   if (.not. associated(tv%varT)) call safe_alloc_ptr(tv%varT, G%isd, G%ied, G%jsd, G%jed, GV%ke)
   do k=1,G%ke
-     do j=G%isc-1,G%iec+1
-        do i=G%jsc-1,G%jec+1
+     do j=G%jsc,G%jec
+        do i=G%isc,G%iec
            hl(1) = h(i,j,k) * G%mask2dT(i,j)
            hl(2) = h(i-1,j,k) * G%mask2dCu(I-1,j)
            hl(3) = h(i+1,j,k) * G%mask2dCu(I,j)
@@ -187,9 +187,9 @@ contains
   enddo
   ! if stochastic, perturb
   if (stoch_eos_CS%use_stoch_eos) then
-     do k=1,G%ke
-        do j=G%jsc-1,G%jec+1
-           do i=G%isc-1,G%iec+1
+     do k=1,G%ke               
+        do j=G%jsc,G%jec
+           do i=G%isc,G%iec
                tv%varT(i,j,k) = exp (stoch_eos_CS%stanley_a * stoch_eos_CS%pattern(i,j)) * tv%varT(i,j,k)
            enddo
         enddo
