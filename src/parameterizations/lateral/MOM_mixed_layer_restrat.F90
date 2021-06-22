@@ -179,6 +179,7 @@ subroutine mixedlayer_restrat_general(h, uhtr, vhtr, tv, forces, dt, MLD_in, Var
   real, dimension(SZI_(G)) :: pRef_MLD ! A reference pressure for calculating the mixed layer
                                        ! densities [R L2 T-2 ~> Pa].
   real, dimension(SZI_(G)) :: rhoAtK, rho1, d1, pRef_N2 ! Used for N2
+  real, dimension(SZI_(G)) :: covTS, varS !SGS TS covariance, S variance in Stanley param; currently 0
   real :: aFac, bFac ! Nondimensional ratios [nondim]
   real :: ddRho    ! A density difference [R ~> kg m-3]
   real :: hAtVel, zpa, zpb, dh, res_scaling_fac
@@ -198,6 +199,9 @@ subroutine mixedlayer_restrat_general(h, uhtr, vhtr, tv, forces, dt, MLD_in, Var
 
   is  = G%isc  ; ie  = G%iec  ; js  = G%jsc  ; je  = G%jec ; nz = G%ke
   Isq = G%IscB ; Ieq = G%IecB ; Jsq = G%JscB ; Jeq = G%JecB
+  
+  covTS(:)=0.0
+  varS(:)=0.0
 
   if (.not.associated(tv%eqn_of_state)) call MOM_error(FATAL, "MOM_mixedlayer_restrat: "// &
          "An equation of state must be used with this module.")
@@ -211,7 +215,7 @@ subroutine mixedlayer_restrat_general(h, uhtr, vhtr, tv, forces, dt, MLD_in, Var
     do j = js-1, je+1
       dK(:) = 0.5 * h(:,j,1) ! Depth of center of surface layer
 	  if (CS%use_stanley_ml) then
-        call calculate_density(tv%T(:,j,1), tv%S(:,j,1), pRef_MLD, tv%varT(:,j,1), 0.0, 0.0, &
+        call calculate_density(tv%T(:,j,1), tv%S(:,j,1), pRef_MLD, tv%varT(:,j,1), covTS, varS, &
           rhoSurf, tv%eqn_of_state, EOSdom) 	  
 	  else
         call calculate_density(tv%T(:,j,1), tv%S(:,j,1), pRef_MLD, rhoSurf, tv%eqn_of_state, EOSdom)
@@ -224,7 +228,7 @@ subroutine mixedlayer_restrat_general(h, uhtr, vhtr, tv, forces, dt, MLD_in, Var
         ! Mixed-layer depth, using sigma-0 (surface reference pressure)
         deltaRhoAtKm1(:) = deltaRhoAtK(:) ! Store value from previous iteration of K
         if (CS%use_stanley_ml) then
-		  call calculate_density(tv%T(:,j,k), tv%S(:,j,k), pRef_MLD, tv%varT(:,j,k), 0.0, 0.0, &
+		  call calculate_density(tv%T(:,j,k), tv%S(:,j,k), pRef_MLD, tv%varT(:,j,k), covTS, varS, &
             deltaRhoAtK, tv%eqn_of_state, EOSdom) 	
 		else
 		  call calculate_density(tv%T(:,j,k), tv%S(:,j,k), pRef_MLD, deltaRhoAtK, tv%eqn_of_state, EOSdom)
@@ -333,7 +337,7 @@ subroutine mixedlayer_restrat_general(h, uhtr, vhtr, tv, forces, dt, MLD_in, Var
       enddo
       if (keep_going) then
 	    if (CS%use_stanley_ml) then
-          call calculate_density(tv%T(:,j,k), tv%S(:,j,k), p0, tv%varT(:,j,k), 0.0, 0.0, &
+          call calculate_density(tv%T(:,j,k), tv%S(:,j,k), p0, tv%varT(:,j,k), covTS, varS, &
             rho_ml(:), tv%eqn_of_state, EOSdom)
 		else   
           call calculate_density(tv%T(:,j,k), tv%S(:,j,k), p0, rho_ml(:), tv%eqn_of_state, EOSdom)
