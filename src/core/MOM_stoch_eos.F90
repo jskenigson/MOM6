@@ -37,8 +37,9 @@ type, public :: MOM_stoch_eos_CS
   real ALLOCABLE_, dimension(NIMEM_,NJMEM_) :: phi
                     !< temporal correlation stochastic EOS (deugging)
   logical :: use_stoch_eos  !< If true, use the stochastic equation of state (Stanley et al. 2020)
-  real :: stanley_coeff 
-  real :: stanley_a
+  real :: stanley_coeff !< Coefficient correlating the temperature gradient 
+                        !and SGS T variance; if <0, turn off scheme in all codes
+  real :: stanley_a !a in exp(aX) in stochastic coefficient 
 !  integer :: id_stoch_eos  = -1, id_stoch_phi  = -1
 end type MOM_stoch_eos_CS
 
@@ -62,40 +63,46 @@ contains
                  "to the EOS in the PGF.", default=.false.)
   call get_param(param_file, "MOM", "STANLEY_COEFF", stoch_eos_CS%stanley_coeff, &
                  "Coefficient correlating the temperature gradient "//&
-                 "and SGS T variance.", default=0.0)
+                 "and SGS T variance.", default=-1.0)
   call get_param(param_file, "MOM", "STANLEY_A", stoch_eos_CS%stanley_a, &
                  "Coefficient a which scales chi in stochastic perturbation of the "//&
                  "SGS T variance.", default=1.0)
-  ALLOC_(stoch_eos_CS%pattern(G%isd:G%ied,G%jsd:G%jed)) ; stoch_eos_CS%pattern(:,:) = 0.0
-  vd = var_desc("stoch_eos_pattern","nondim","Random pattern for stoch EOS",'h','1')
-  call register_restart_field(stoch_eos_CS%pattern, vd, .false., restart_CS)
-  ALLOC_(stoch_eos_CS%phi(G%isd:G%ied,G%jsd:G%jed)) ; stoch_eos_CS%phi(:,:) = 0.0
-  ALLOC_(l2_inv(G%isd:G%ied,G%jsd:G%jed)) 
-  ALLOC_(rgauss(G%isd:G%ied,G%jsd:G%jed)) 
-  call get_param(param_file, "MOM", "SEED_STOCH_EOS", seed, &
+				 
+  !don't run anything if STANLEY_COEFF < 0
+  if (stoch_eos_CS%stanley_coeff >= 0.0)
+  
+    ALLOC_(stoch_eos_CS%pattern(G%isd:G%ied,G%jsd:G%jed)) ; stoch_eos_CS%pattern(:,:) = 0.0
+    vd = var_desc("stoch_eos_pattern","nondim","Random pattern for stoch EOS",'h','1')
+    call register_restart_field(stoch_eos_CS%pattern, vd, .false., restart_CS)
+    ALLOC_(stoch_eos_CS%phi(G%isd:G%ied,G%jsd:G%jed)) ; stoch_eos_CS%phi(:,:) = 0.0
+    ALLOC_(l2_inv(G%isd:G%ied,G%jsd:G%jed)) 
+    ALLOC_(rgauss(G%isd:G%ied,G%jsd:G%jed)) 
+    call get_param(param_file, "MOM", "SEED_STOCH_EOS", seed, &
                  "Specfied seed for random number sequence ", default=0)
-  call random_2d_constructor(rn_CS, G%HI, Time, seed)
-  call random_2d_norm(rn_CS, G%HI, rgauss)
-  ! fill array with approximation of grid area needed for decorrelation
-  ! time-scale calculation
-  do j=G%jsc,G%jec
-     do i=G%isc,G%iec
-        l2_inv(i,j)=1.0/(G%dxT(i,j)**2+G%dyT(i,j)**2)
-     enddo
-  enddo 
-  if (is_new_run(restart_CS)) then
-     do j=G%jsc,G%jec
-        do i=G%isc,G%iec
-           stoch_eos_CS%pattern(i,j)=amplitude*rgauss(i,j)
-        enddo
-     enddo
-  endif
+    call random_2d_constructor(rn_CS, G%HI, Time, seed)
+    call random_2d_norm(rn_CS, G%HI, rgauss)
+    ! fill array with approximation of grid area needed for decorrelation
+    ! time-scale calculation
+    do j=G%jsc,G%jec
+       do i=G%isc,G%iec
+          l2_inv(i,j)=1.0/(G%dxT(i,j)**2+G%dyT(i,j)**2)
+       enddo
+    enddo 
+    if (is_new_run(restart_CS)) then
+       do j=G%jsc,G%jec
+          do i=G%isc,G%iec
+             stoch_eos_CS%pattern(i,j)=amplitude*rgauss(i,j)
+          enddo
+       enddo
+    endif
 
-  !stoch_eos_CS%id_stoch_eos = register_diag_field('ocean_model', 'stoch_eos', diag%axesT1, Time, &
-  !    'random pattern for EOS', 'None')
-  !stoch_eos_CS%id_stoch_phi = register_diag_field('ocean_model', 'stoch_phi', diag%axesT1, Time, &
-  !    'phi for EOS', 'None')
-  !print*,'PJP registered output',stoch_eos_CS%id_stoch_eos,stoch_eos_CS%id_stoch_phi
+    !stoch_eos_CS%id_stoch_eos = register_diag_field('ocean_model', 'stoch_eos', diag%axesT1, Time, &
+    !    'random pattern for EOS', 'None')
+    !stoch_eos_CS%id_stoch_phi = register_diag_field('ocean_model', 'stoch_phi', diag%axesT1, Time, &
+    !    'phi for EOS', 'None')
+    !print*,'PJP registered output',stoch_eos_CS%id_stoch_eos,stoch_eos_CS%id_stoch_phi
+	
+  endif
   
   end subroutine MOM_stoch_eos_init
 
