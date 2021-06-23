@@ -38,6 +38,7 @@ type, public :: MOM_stoch_eos_CS
                     !< temporal correlation stochastic EOS (deugging)
   logical :: use_stoch_eos  !< If true, use the stochastic equation of state (Stanley et al. 2020)
   real :: stanley_coeff 
+  real :: stanley_a
 !  integer :: id_stoch_eos  = -1, id_stoch_phi  = -1
 end type MOM_stoch_eos_CS
 
@@ -62,6 +63,9 @@ contains
   call get_param(param_file, "MOM", "STANLEY_COEFF", stoch_eos_CS%stanley_coeff, &
                  "Coefficient correlating the temperature gradient "//&
                  "and SGS T variance.", default=0.0)
+  call get_param(param_file, "MOM", "STANLEY_A", stoch_eos_CS%stanley_a, &
+                 "Coefficient a which scales chi in stochastic perturbation of the "//&
+                 "SGS T variance.", default=1.0)
   ALLOC_(stoch_eos_CS%pattern(G%isd:G%ied,G%jsd:G%jed)) ; stoch_eos_CS%pattern(:,:) = 0.0
   vd = var_desc("stoch_eos_pattern","nondim","Random pattern for stoch EOS",'h','1')
   call register_restart_field(stoch_eos_CS%pattern, vd, .false., restart_CS)
@@ -186,7 +190,7 @@ contains
      do k=1,G%ke
         do j=G%jsc,G%jec
            do i=G%isc,G%iec
-               tv%varT(i,j,k) = exp (stoch_eos_CS%pattern(i,j)) * tv%varT(i,j,k)
+               tv%varT(i,j,k) = exp (stoch_eos_CS%stanley_a * stoch_eos_CS%pattern(i,j)) * tv%varT(i,j,k)
            enddo
         enddo
      enddo
