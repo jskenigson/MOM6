@@ -69,7 +69,7 @@ contains
                  "SGS T variance.", default=1.0)
 				 
   !don't run anything if STANLEY_COEFF < 0
-  if (stoch_eos_CS%stanley_coeff >= 0.0)
+  if (stoch_eos_CS%stanley_coeff >= 0.0) then
   
     ALLOC_(stoch_eos_CS%pattern(G%isd:G%ied,G%jsd:G%jed)) ; stoch_eos_CS%pattern(:,:) = 0.0
     vd = var_desc("stoch_eos_pattern","nondim","Random pattern for stoch EOS",'h','1')
