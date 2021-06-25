@@ -159,8 +159,8 @@ contains
 ! locals
   integer                                ::  i,j,k
   real :: Tl(5)              ! copy and T in local stencil [degC]
-  real :: mn_T               ! mean of T in local stencil [degC]
-  real :: mn_T2              ! mean of T**2 in local stencil [degC]
+  real :: TX2                ! dx times dT/dx, squared [degC^2]
+  real :: TY2                ! dy times dT/dy, squared [degC^2]
   real :: hl(5)              ! Copy of local stencil of H [H ~> m]
   real :: r_sm_H             ! Reciprocal of sum of H in local stencil [H-1 ~> m-1]
 
@@ -176,19 +176,25 @@ contains
            hl(3) = h(i+1,j,k) * G%mask2dCu(I,j)
            hl(4) = h(i,j-1,k) * G%mask2dCv(i,J-1)
            hl(5) = h(i,j+1,k) * G%mask2dCv(i,J)
-           r_sm_H = 1. / ( ( hl(1) + ( ( hl(2) + hl(3) ) + ( hl(4) + hl(5) ) ) ) + GV%H_subroundoff )
-           ! Mean of T
+           r_sm_H = 1. / ( 4. * hl(3) * hl(4)  *hl(5) + hl(1) * (hl(2) + hl(3)) * (hl(4) + hl(5)) &
+                         + 4. * hl(2) * (hl(4) * hl(5) + hl(3) * (hl(4) + hl(5))) + GV%H_subroundoff**3 )
+           ! Local T
            Tl(1) = tv%T(i,j,k) ; Tl(2) = tv%T(i-1,j,k) ; Tl(3) = tv%T(i+1,j,k)
            Tl(4) = tv%T(i,j-1,k) ; Tl(5) = tv%T(i,j+1,k)
-           mn_T = ( hl(1)*Tl(1) + ( ( hl(2)*Tl(2) + hl(3)*Tl(3) ) + ( hl(4)*Tl(4) + hl(5)*Tl(5) ) ) ) * r_sm_H
-           ! Adjust T vectors to have zero mean
-           Tl(:) = Tl(:) - mn_T ; mn_T = 0.
-           ! Variance of T
-           mn_T2 = ( hl(1)*Tl(1)*Tl(1) + ( ( hl(2)*Tl(2)*Tl(2) + hl(3)*Tl(3)*Tl(3) ) &
-                                         + ( hl(4)*Tl(4)*Tl(4) + hl(5)*Tl(5)*Tl(5) ) ) ) * r_sm_H
-           ! Variance should be positive but round-off can violate this. Calculating
-           ! variance directly would fix this but requires more operations.
-           tv%varT(i,j,k) = stoch_eos_CS%stanley_coeff * max(0., mn_T2)
+           ! (dx times dT/dx)^2
+           TX2 = hl(1) * (hl(4) + hl(5)) * (hl(2) * (Tl(1) - Tl(2)) + hl(3) * (Tl(3) - Tl(1))) &
+                                        - 2. * (hl(2) * hl(3) * (hl(4) + hl(5)) * (Tl(2) - Tl(3)) &
+                                        + hl(2) * hl(4) * hl(5) * (2. * Tl(2) - Tl(4) - Tl(5))  &
+                                        - hl(3) * hl(4) * hl(5) * (2. * Tl(3) - Tl(4) - Tl(5)))
+           TX2 = (r_sm_H * TX2)**2
+           ! (dy times dT/dy)^2, obtained by rotating the indices
+           TY2 = hl(1) * (hl(3) + hl(2)) * (hl(4) * (Tl(1) - Tl(4)) + hl(5) * (Tl(5) - Tl(1))) &
+                                        - 2. * (hl(4) * hl(5) * (hl(3) + hl(2)) * (Tl(4) - Tl(5)) &
+                                        + hl(4) * hl(3) * hl(2) * (2. * Tl(4) - Tl(3) - Tl(2))  &
+                                        - hl(5) * hl(3) * hl(2) * (2. * Tl(5) - Tl(3) - Tl(2)))
+           TY2 = (r_sm_H * TY2)**2
+           ! SGS temperature variance parameterization 
+           tv%varT(i,j,k) = stoch_eos_CS%stanley_coeff * (TX2 + TY2)
         enddo
      enddo
   enddo
