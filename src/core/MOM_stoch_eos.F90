@@ -169,16 +169,12 @@ contains
            hl(3) = h(i+1,j,k) * G%mask2dCu(I,j)
            hl(4) = h(i,j-1,k) * G%mask2dCv(i,J-1)
            hl(5) = h(i,j+1,k) * G%mask2dCv(i,J)
-           r_sm_H = 1. / ( ( hl(1) + ( ( hl(2) + hl(3) ) + ( hl(4) + hl(5) ) ) ) + GV%H_subroundoff )
+           r_sm_H = 1. / ( 4. * hl(3) * hl(4)  *hl(5) + hl(1) * (hl(2) + hl(3)) * (hl(4) + hl(5)) &
+                         + 4. * hl(2) * (hl(4) * hl(5) + hl(3) * (hl(4) + hl(5))) + GV%H_subroundoff**3 )
            ! Mean of T
            Tl(1) = tv%T(i,j,k) ; Tl(2) = tv%T(i-1,j,k) ; Tl(3) = tv%T(i+1,j,k)
            Tl(4) = tv%T(i,j-1,k) ; Tl(5) = tv%T(i,j+1,k)
-           mn_T = ( hl(1)*Tl(1) + ( ( hl(2)*Tl(2) + hl(3)*Tl(3) ) + ( hl(4)*Tl(4) + hl(5)*Tl(5) ) ) ) * r_sm_H
-           ! Adjust T vectors to have zero mean
-           Tl(:) = Tl(:) - mn_T ; mn_T = 0.
-           ! Variance of T
-           mn_T2 = ( hl(1)*Tl(1)*Tl(1) + ( ( hl(2)*Tl(2)*Tl(2) + hl(3)*Tl(3)*Tl(3) ) &
-                                         + ( hl(4)*Tl(4)*Tl(4) + hl(5)*Tl(5)*Tl(5) ) ) ) * r_sm_H
+           ! Make TX2 and TY2, then set tv%varT(i,j,k) = stoch_eos_CS%stanley_coeff * max(0., TX2 + TY2)
            ! Variance should be positive but round-off can violate this. Calculating
            ! variance directly would fix this but requires more operations.
            tv%varT(i,j,k) = stoch_eos_CS%stanley_coeff * max(0., mn_T2)
