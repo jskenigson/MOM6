@@ -194,10 +194,12 @@ contains
                                         - hl(5) * hl(3) * hl(2) * (2. * Tl(5) - Tl(3) - Tl(2)))
            TY2 = (r_sm_H * TY2)**2
            ! SGS temperature variance parameterization 
-           tv%varT(i,j,k) = (stoch_eos_CS%stanley_coeff * (TX2 + TY2)) * (minval(hl)/(maxval(hl)+GV%H_subroundoff))
+           tv%varT(i,j,k) = stoch_eos_CS%stanley_coeff * (TX2 + TY2)
         enddo
      enddo
   enddo
+  !set limiting value
+  tv%varT = min(tv%varT,35.0)
   ! if stochastic, perturb
   if (stoch_eos_CS%use_stoch_eos) then
      do k=1,G%ke
