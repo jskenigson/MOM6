@@ -198,6 +198,8 @@ contains
         enddo
      enddo
   enddo
+  !set limiting value
+  tv%varT = min(tv%varT,35.0)
   ! if stochastic, perturb
   if (stoch_eos_CS%use_stoch_eos) then
      do k=1,G%ke
