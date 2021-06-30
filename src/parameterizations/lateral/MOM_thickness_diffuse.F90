@@ -673,11 +673,6 @@ subroutine thickness_diffuse_full(h, e, Kh_u, Kh_v, tv, uhD, vhD, cg1, dt, G, GV
   real :: G_rho0        ! g/Rho0 [L2 R-1 Z-1 T-2 ~> m4 kg-1 s-2].
   real :: N2_floor      ! A floor for N2 to avoid degeneracy in the elliptic solver
                         ! times unit conversion factors [T-2 L2 Z-2 ~> s-2]
-  real :: Tl(5)         ! copy and T in local stencil [degC]
-  real :: mn_T          ! mean of T in local stencil [degC]
-  real :: mn_T2         ! mean of T**2 in local stencil [degC]
-  real :: hl(5)         ! Copy of local stencil of H [H ~> m]
-  real :: r_sm_H        ! Reciprocal of sum of H in local stencil [H-1 ~> m-1]
   real, dimension(SZIB_(G), SZJ_(G), SZK_(G)+1) :: diag_sfn_x, diag_sfn_unlim_x ! Diagnostics
   real, dimension(SZI_(G), SZJB_(G), SZK_(G)+1) :: diag_sfn_y, diag_sfn_unlim_y ! Diagnostics
   logical :: present_int_slope_u, present_int_slope_v
@@ -728,8 +723,7 @@ subroutine thickness_diffuse_full(h, e, Kh_u, Kh_v, tv, uhD, vhD, cg1, dt, G, GV
 
 !$OMP parallel default(none) shared(is,ie,js,je,h_avail_rsum,pres,h_avail,I4dt, use_Stanley, &
 !$OMP                               CS,G,GV,tv,h,h_frac,nz,uhtot,Work_u,vhtot,Work_v,T, &
-!$OMP                               diag_sfn_x, diag_sfn_y, diag_sfn_unlim_x, diag_sfn_unlim_y ) &
-!$OMP          private(hl,r_sm_H,Tl,mn_T,mn_T2)
+!$OMP                               diag_sfn_x, diag_sfn_y, diag_sfn_unlim_x, diag_sfn_unlim_y )
   ! Find the maximum and minimum permitted streamfunction.
 !$OMP do
   do j=js-1,je+1 ; do i=is-1,ie+1
