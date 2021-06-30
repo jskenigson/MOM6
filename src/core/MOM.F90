@@ -995,7 +995,7 @@ subroutine step_MOM_dynamics(forces, p_surf_begin, p_surf_end, dt, dt_thermo, &
 
   call cpu_clock_begin(id_clock_dynamics)
   call cpu_clock_begin(id_clock_stoch)
-  if (CS%stoch_eos_CS%use_stoch_eos) call MOM_stoch_eos_run(G,u,v,dt_thermo,Time_local,CS%stoch_eos_CS,CS%diag)
+  if (CS%stoch_eos_CS%use_stoch_eos) call MOM_stoch_eos_run(G,u,v,dt,Time_local,CS%stoch_eos_CS,CS%diag)
   call cpu_clock_end(id_clock_stoch)
   call cpu_clock_begin(id_clock_varT)
   if (CS%stoch_eos_CS%stanley_coeff >= 0.0) then
