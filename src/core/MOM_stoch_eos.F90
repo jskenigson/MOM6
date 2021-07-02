@@ -46,7 +46,7 @@ end type MOM_stoch_eos_CS
 
 contains
   subroutine MOM_stoch_eos_init(G,Time,param_file,stoch_eos_CS,restart_CS,diag)
-! initialization subroutine called my MOM.F90,
+! initialization subroutine called by MOM.F90,
   type(param_file_type), intent(in)    :: param_file  !< structure indicating parameter file to parse
   type(ocean_grid_type), intent(in)    :: G
   type(time_type),       intent(in)    :: Time
@@ -126,8 +126,8 @@ contains
   ! advance AR(1)
   do j=G%jsc,G%jec
      do i=G%isc,G%iec
-        ubar=0.5*(u(I,j,1)+u(I-1,j,1))
-        vbar=0.5*(v(i,J,1)+v(i,J-1,1))
+        ubar=0.5*(u(I,j,1)*G%mask2dCu(I,j)+u(I-1,j,1)*G%mask2dCu(I-1,j))
+        vbar=0.5*(v(i,J,1)*G%mask2dCv(i,J)+v(i,J-1,1)*G%mask2dCv(i,J-1))
         phi=exp(-1*delt*tfac*sqrt((ubar**2+vbar**2)*l2_inv(i,j)))
         stoch_eos_CS%pattern(i,j)=phi*stoch_eos_CS%pattern(i,j) + amplitude*sqrt(1-phi**2)*rgauss(i,j)
         stoch_eos_CS%phi(i,j)=phi
@@ -162,7 +162,7 @@ contains
   real :: TX2                ! dx times dT/dx, squared [degC^2]
   real :: TY2                ! dy times dT/dy, squared [degC^2]
   real :: hl(5)              ! Copy of local stencil of H [H ~> m]
-  real :: r_sm_H             ! Reciprocal of sum of H in local stencil [H-1 ~> m-1]
+  real :: r_sm_H             ! Reciprocal of sum of H in local stencil [H-3 ~> m-3]
 
   ! This block does a thickness weighted variance calculation and helps control for
   ! extreme gradients along layers which are vanished against topography. It is
