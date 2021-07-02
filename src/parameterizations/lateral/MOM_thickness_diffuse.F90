@@ -1090,8 +1090,8 @@ subroutine thickness_diffuse_full(h, e, Kh_u, Kh_v, tv, uhD, vhD, cg1, dt, G, GV
         if (use_Stanley) then
           ! Correction to the horizontal density gradient due to nonlinearity in
           ! the EOS rectifying SGS temperature anomalies
-          drdjA = drdjA + drho_dT_dT_v(I) * 0.5 * ( tv%varT(i,j+1,k-1)-tv%varT(i,j,k-1) )
-          drdjB = drdjB + drho_dT_dT_v(I) * 0.5 * ( tv%varT(i,j+1,k)-tv%varT(i,j,k) )
+          drdjA = drdjA + drho_dT_dT_v(i) * 0.5 * ( tv%varT(i,j+1,k-1)-tv%varT(i,j,k-1) )
+          drdjB = drdjB + drho_dT_dT_v(i) * 0.5 * ( tv%varT(i,j+1,k)-tv%varT(i,j,k) )
         endif
 
         if (find_work) drdj_v(i,k) = drdjB
