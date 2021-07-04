@@ -451,6 +451,9 @@ subroutine int_density_dz_generic_plm(k, tv, T_t, T_b, S_t, S_b, e, rho_ref, &
     if (use_inaccurate_form) use_rho_ref = .not. use_inaccurate_form
   endif
 
+  use_varT = .false. !ensure initialized
+  use_covarTS = .false.
+  use_varS = .false.
   if (use_stanley_eos) then 
     use_varT = associated(tv%varT) 
     use_covarTS = associated(tv%covarTS) 
@@ -879,6 +882,9 @@ subroutine int_density_dz_generic_ppm(k, tv, T_t, T_b, S_t, S_b, e, &
   t6 = 0.
   use_PPM = .true. ! This is a place-holder to allow later re-use of this function
 
+  use_varT = .false. !ensure initialized
+  use_covarTS = .false.
+  use_varS = .false.
   if (use_stanley_eos) then 
      use_varT = associated(tv%varT)
      use_covarTS = associated(tv%covarTS)
