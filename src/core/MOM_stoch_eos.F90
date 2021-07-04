@@ -40,7 +40,7 @@ type, public :: MOM_stoch_eos_CS
   real :: stanley_coeff !< Coefficient correlating the temperature gradient 
                         !and SGS T variance; if <0, turn off scheme in all codes
   real :: stanley_a !a in exp(aX) in stochastic coefficient 
-!  integer :: id_stoch_eos  = -1, id_stoch_phi  = -1
+  integer :: id_stoch_eos  = -1, id_stoch_phi  = -1, id_tvar_sgs = -1
 end type MOM_stoch_eos_CS
 
 
@@ -96,12 +96,15 @@ contains
        enddo
     endif
 
-    !stoch_eos_CS%id_stoch_eos = register_diag_field('ocean_model', 'stoch_eos', diag%axesT1, Time, &
-    !    'random pattern for EOS', 'None')
-    !stoch_eos_CS%id_stoch_phi = register_diag_field('ocean_model', 'stoch_phi', diag%axesT1, Time, &
-    !    'phi for EOS', 'None')
-    !print*,'PJP registered output',stoch_eos_CS%id_stoch_eos,stoch_eos_CS%id_stoch_phi
-	
+    !register diagnostics
+    stoch_eos_CS%id_tvar_sgs = register_diag_field('ocean_model', 'tvar_sgs', diag%axesTL, Time, &
+      'Parameterized SGS Temperature Variance ', 'None')	
+	if (stoch_eos_CS%use_stoch_eos) then
+      stoch_eos_CS%id_stoch_eos = register_diag_field('ocean_model', 'stoch_eos', diag%axesT1, Time, &
+        'random pattern for EOS', 'None')
+      stoch_eos_CS%id_stoch_phi = register_diag_field('ocean_model', 'stoch_phi', diag%axesT1, Time, &
+        'phi for EOS', 'None')
+	endif
   endif
   
   end subroutine MOM_stoch_eos_init
