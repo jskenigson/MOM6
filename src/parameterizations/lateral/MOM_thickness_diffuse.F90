@@ -601,7 +601,7 @@ subroutine thickness_diffuse_full(h, e, Kh_u, Kh_v, tv, uhD, vhD, cg1, dt, G, GV
     h_avail_rsum  ! The running sum of h_avail above an interface [H L2 T-1 ~> m3 s-1 or kg s-1].
   real, dimension(SZIB_(G)) :: &
     drho_dT_u, &  ! The derivative of density with temperature at u points [R degC-1 ~> kg m-3 degC-1]
-    drho_dS_u, &  ! The derivative of density with salinity at u points [R ppt-1 ~> kg m-3 ppt-1].
+    drho_dS_u     ! The derivative of density with salinity at u points [R ppt-1 ~> kg m-3 ppt-1].
   real, dimension(SZI_(G)) :: scrap ! An array to pass to calculate_density_second_derivs() that will be ingored.
   real, dimension(SZI_(G)) :: &
     drho_dT_v, &  ! The derivative of density with temperature at v points [R degC-1 ~> kg m-3 degC-1]
