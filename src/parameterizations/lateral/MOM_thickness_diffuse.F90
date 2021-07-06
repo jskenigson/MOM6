@@ -1083,7 +1083,7 @@ subroutine thickness_diffuse_full(h, e, Kh_u, Kh_v, tv, uhD, vhD, cg1, dt, G, GV
                                       tv%eqn_of_state, EOSdom_v)
       endif
       if (use_Stanley) then
-	    do i=is,ie
+        do i=is,ie
           pres_h(i) = pres(i,j,K)		  
           T_h(i) = 0.5*(T(i,j,k) + T(i,j,k-1))
           S_h(i) = 0.5*(S(i,j,k) + S(i,j,k-1))
