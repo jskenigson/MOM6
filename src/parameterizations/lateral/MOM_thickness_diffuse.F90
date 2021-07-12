@@ -601,13 +601,13 @@ subroutine thickness_diffuse_full(h, e, Kh_u, Kh_v, tv, uhD, vhD, cg1, dt, G, GV
     h_avail_rsum  ! The running sum of h_avail above an interface [H L2 T-1 ~> m3 s-1 or kg s-1].
   real, dimension(SZIB_(G)) :: &
     drho_dT_u, &  ! The derivative of density with temperature at u points [R degC-1 ~> kg m-3 degC-1]
-    drho_dS_u, &  ! The derivative of density with salinity at u points [R ppt-1 ~> kg m-3 ppt-1].
-    drho_dT_dT_u  ! The second derivative of density with temperature at u points [R degC-2 ~> kg m-3 degC-2]
-  real, dimension(SZIB_(G)) :: scrap ! An array to pass to calculate_density_second_derivs() that will be ingored.
+    drho_dS_u     ! The derivative of density with salinity at u points [R ppt-1 ~> kg m-3 ppt-1].
+  real, dimension(SZI_(G)) :: scrap ! An array to pass to calculate_density_second_derivs() that will be ingored.
   real, dimension(SZI_(G)) :: &
     drho_dT_v, &  ! The derivative of density with temperature at v points [R degC-1 ~> kg m-3 degC-1]
     drho_dS_v, &  ! The derivative of density with salinity at v points [R ppt-1 ~> kg m-3 ppt-1].
-    drho_dT_dT_v  ! The second derivative of density with temperature at v points [R degC-2 ~> kg m-3 degC-2]
+    drho_dT_dT_h, & ! The second derivative of density with temperature at h points [R degC-2 ~> kg m-3 degC-2]	
+    drho_dT_dT_hr ! The second derivative of density with temperature at h (+1) points [R degC-2 ~> kg m-3 degC-2]	
   real :: uhtot(SZIB_(G), SZJ_(G))  ! The vertical sum of uhD [H L2 T-1 ~> m3 s-1 or kg s-1].
   real :: vhtot(SZI_(G), SZJB_(G))  ! The vertical sum of vhD [H L2 T-1 ~> m3 s-1 or kg s-1].
   real, dimension(SZIB_(G)) :: &
@@ -618,6 +618,13 @@ subroutine thickness_diffuse_full(h, e, Kh_u, Kh_v, tv, uhD, vhD, cg1, dt, G, GV
     T_v, &        ! Temperature on the interface at the v-point [degC].
     S_v, &        ! Salinity on the interface at the v-point [ppt].
     pres_v        ! Pressure on the interface at the v-point [R L2 T-2 ~> Pa].
+  real, dimension(SZI_(G)) :: &
+    T_h, &        ! Temperature on the interface at the h-point [degC].
+    S_h, &        ! Salinity on the interface at the h-point [ppt].	
+    pres_h, &     ! Pressure on the interface at the h-point [R L2 T-2 ~> Pa].
+    T_hr, &       ! Temperature on the interface at the h (+1) point [degC].
+    S_hr, &       ! Salinity on the interface at the h (+1) point [ppt].	
+    pres_hr       ! Pressure on the interface at the h (+1) point [R L2 T-2 ~> Pa].
   real :: Work_u(SZIB_(G), SZJ_(G)) ! The work being done by the thickness
   real :: Work_v(SZI_(G), SZJB_(G)) ! diffusion integrated over a cell [R Z L4 T-3  ~> W ]
   real :: Work_h        ! The work averaged over an h-cell [R Z L2 T-3 ~> W m-2].
@@ -771,7 +778,7 @@ subroutine thickness_diffuse_full(h, e, Kh_u, Kh_v, tv, uhD, vhD, cg1, dt, G, GV
 !$OMP                                  present_slope_x,G_rho0,Slope_x_PE,hN2_x_PE)  &
 !$OMP                          private(drdiA,drdiB,drdkL,drdkR,pres_u,T_u,S_u,      &
 !$OMP                                  drho_dT_u,drho_dS_u,hg2A,hg2B,hg2L,hg2R,haA, &
-!$OMP                                  drho_dT_dT_u,scrap,                          &
+!$OMP                                  drho_dT_dT_h,scrap,pres_h,T_h,S_h,           &
 !$OMP                                  haB,haL,haR,dzaL,dzaR,wtA,wtB,wtL,wtR,drdz,  &
 !$OMP                                  drdx,mag_grad2,Slope,slope2_Ratio_u,hN2_u,   &
 !$OMP                                  Sfn_unlim_u,drdi_u,drdkDe_u,h_harm,c2_h_u,   &
@@ -798,11 +805,16 @@ subroutine thickness_diffuse_full(h, e, Kh_u, Kh_v, tv, uhD, vhD, cg1, dt, G, GV
                                       tv%eqn_of_state, EOSdom_u)
       endif
       if (use_Stanley) then
+        do i=is-1,ie
+          pres_h(i) = pres(i,j,K)
+          T_h(i) = 0.5*(T(i,j,k) + T(i,j,k-1))
+          S_h(i) = 0.5*(S(i,j,k) + S(i,j,k-1))
+        enddo
         ! The second line below would correspond to arguments
         !            drho_dS_dS, drho_dS_dT, drho_dT_dT, drho_dS_dP, drho_dT_dP, &
-        call calculate_density_second_derivs(T_u, S_u, pres_u, &
-                     scrap, scrap, drho_dT_dT_u, scrap, scrap, &
-                     (is-IsdB+1)-1, ie-is+2, tv%eqn_of_state)
+        call calculate_density_second_derivs(T_h, S_h, pres_h, &
+                     scrap, scrap, drho_dT_dT_h, scrap, scrap, &
+                     is-1, ie-is+2, tv%eqn_of_state)
       endif
 
       do I=is-1,ie
@@ -825,8 +837,10 @@ subroutine thickness_diffuse_full(h, e, Kh_u, Kh_v, tv, uhD, vhD, cg1, dt, G, GV
         if (use_Stanley) then
           ! Correction to the horizontal density gradient due to nonlinearity in
           ! the EOS rectifying SGS temperature anomalies
-          drdiA = drdiA + drho_dT_dT_u(I) * 0.5 * ( tv%varT(i+1,j,k-1)-tv%varT(i,j,k-1) )
-          drdiB = drdiB + drho_dT_dT_u(I) * 0.5 * ( tv%varT(i+1,j,k)-tv%varT(i,j,k) )
+          drdiA = drdiA + 0.5 * ((drho_dT_dT_h(i+1) * tv%varT(i+1,j,k-1)) - &
+		                         (drho_dT_dT_h(i) * tv%varT(i,j,k-1)) )
+          drdiB = drdiB + 0.5 * ((drho_dT_dT_h(i+1) * tv%varT(i+1,j,k)) - &
+		                         (drho_dT_dT_h(i) * tv%varT(i,j,k)) )
         endif
         if (find_work) drdi_u(I,k) = drdiB
 
@@ -1043,7 +1057,8 @@ subroutine thickness_diffuse_full(h, e, Kh_u, Kh_v, tv, uhD, vhD, cg1, dt, G, GV
 !$OMP                                  present_slope_y,G_rho0,Slope_y_PE,hN2_y_PE)  &
 !$OMP                          private(drdjA,drdjB,drdkL,drdkR,pres_v,T_v,S_v,      &
 !$OMP                                  drho_dT_v,drho_dS_v,hg2A,hg2B,hg2L,hg2R,haA, &
-!$OMP                                  drho_dT_dT_v,scrap,                          &
+!$OMP                                  drho_dT_dT_h,scrap,pres_h,T_h,S_h,           &
+!$OMP                                  drho_dT_dT_hr,pres_hr,T_hr,S_hr,             &
 !$OMP                                  haB,haL,haR,dzaL,dzaR,wtA,wtB,wtL,wtR,drdz,  &
 !$OMP                                  drdy,mag_grad2,Slope,slope2_Ratio_v,hN2_v,   &
 !$OMP                                  Sfn_unlim_v,drdj_v,drdkDe_v,h_harm,c2_h_v,   &
@@ -1068,10 +1083,22 @@ subroutine thickness_diffuse_full(h, e, Kh_u, Kh_v, tv, uhD, vhD, cg1, dt, G, GV
                                       tv%eqn_of_state, EOSdom_v)
       endif
       if (use_Stanley) then
+        do i=is,ie
+          pres_h(i) = pres(i,j,K)		  
+          T_h(i) = 0.5*(T(i,j,k) + T(i,j,k-1))
+          S_h(i) = 0.5*(S(i,j,k) + S(i,j,k-1))
+		  
+          pres_hr(i) = pres(i,j+1,K)
+          T_hr(i) = 0.5*(T(i,j+1,k) + T(i,j+1,k-1)) 
+          S_hr(i) = 0.5*(S(i,j+1,k) + S(i,j+1,k-1))
+        enddo
         ! The second line below would correspond to arguments
         !            drho_dS_dS, drho_dS_dT, drho_dT_dT, drho_dS_dP, drho_dT_dP, &
-        call calculate_density_second_derivs(T_v, S_v, pres_v, &
-                     scrap, scrap, drho_dT_dT_v, scrap, scrap, &
+        call calculate_density_second_derivs(T_h, S_h, pres_h, &
+                     scrap, scrap, drho_dT_dT_h, scrap, scrap, &
+                     is, ie-is+1, tv%eqn_of_state)
+        call calculate_density_second_derivs(T_hr, S_hr, pres_hr, &
+                     scrap, scrap, drho_dT_dT_hr, scrap, scrap, &
                      is, ie-is+1, tv%eqn_of_state)
       endif
       do i=is,ie
@@ -1094,8 +1121,10 @@ subroutine thickness_diffuse_full(h, e, Kh_u, Kh_v, tv, uhD, vhD, cg1, dt, G, GV
         if (use_Stanley) then
           ! Correction to the horizontal density gradient due to nonlinearity in
           ! the EOS rectifying SGS temperature anomalies
-          drdjA = drdjA + drho_dT_dT_v(i) * 0.5 * ( tv%varT(i,j+1,k-1)-tv%varT(i,j,k-1) )
-          drdjB = drdjB + drho_dT_dT_v(i) * 0.5 * ( tv%varT(i,j+1,k)-tv%varT(i,j,k) )
+          drdjA = drdjA + 0.5 * ((drho_dT_dT_hr(i) * tv%varT(i,j+1,k-1)) - &
+		                         (drho_dT_dT_h(i) * tv%varT(i,j,k-1)) )
+          drdjB = drdjB + 0.5 * ((drho_dT_dT_hr(i) * tv%varT(i,j+1,k)) - &
+		                         (drho_dT_dT_h(i) * tv%varT(i,j,k)) )
         endif
 
         if (find_work) drdj_v(i,k) = drdjB
