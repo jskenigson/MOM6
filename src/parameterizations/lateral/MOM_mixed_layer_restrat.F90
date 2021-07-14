@@ -845,9 +845,6 @@ logical function mixedlayer_restrat_init(Time, G, GV, US, param_file, diag, CS, 
              "flow is imposed in the mixed layer. Can be used in ALE mode "//&
              "without restriction but in layer mode can only be used if "//&
              "BULKMIXEDLAYER is true.", default=.false.)
-  call get_param(param_file, mdl, "USE_STANLEY_ML", CS%use_stanley_ml, &
-                 "If true, turn on Stanley SGS T variance parameterization "// &
-                 "in ML restrat code.", default=.false.)			 
   if (.not. mixedlayer_restrat_init) return
 
   if (.not.associated(CS)) then
@@ -871,6 +868,9 @@ logical function mixedlayer_restrat_init(Time, G, GV, US, param_file, diag, CS, 
              "geostrophic kinetic energy or 1 plus the square of the "//&
              "grid spacing over the deformation radius, as detailed "//&
              "by Fox-Kemper et al. (2010)", units="nondim", default=0.0)
+  call get_param(param_file, mdl, "USE_STANLEY_ML", CS%use_stanley_ml, &
+                 "If true, turn on Stanley SGS T variance parameterization "// &
+                 "in ML restrat code.", default=.false.)
   ! We use GV%nkml to distinguish between the old and new implementation of MLE.
   ! The old implementation only works for the layer model with nkml>0.
   if (GV%nkml==0) then
