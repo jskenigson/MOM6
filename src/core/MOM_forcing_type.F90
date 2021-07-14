@@ -4,13 +4,15 @@ module MOM_forcing_type
 ! This file is part of MOM6. See LICENSE.md for the license.
 
 use MOM_array_transform, only : rotate_array, rotate_vector, rotate_array_pair
-use MOM_debugging,     only : hchksum, uvchksum
+use MOM_coupler_types, only : coupler_2d_bc_type, coupler_type_destructor
+use MOM_coupler_types, only : coupler_type_increment_data, coupler_type_initialized
 use MOM_cpu_clock,     only : cpu_clock_id, cpu_clock_begin, cpu_clock_end, CLOCK_ROUTINE
+use MOM_debugging,     only : hchksum, uvchksum
 use MOM_diag_mediator, only : post_data, register_diag_field, register_scalar_field
 use MOM_diag_mediator, only : time_type, diag_ctrl, safe_alloc_alloc, query_averaging_enabled
 use MOM_diag_mediator, only : enable_averages, enable_averaging, disable_averaging
-use MOM_error_handler, only : MOM_error, FATAL, WARNING
 use MOM_EOS,           only : calculate_density_derivs, EOS_domain
+use MOM_error_handler, only : MOM_error, FATAL, WARNING
 use MOM_file_parser,   only : get_param, log_param, log_version, param_file_type
 use MOM_grid,          only : ocean_grid_type
 use MOM_opacity,       only : sumSWoverBands, optics_type, extract_optics_slice, optics_nbands
@@ -18,10 +20,6 @@ use MOM_spatial_means, only : global_area_integral, global_area_mean
 use MOM_unit_scaling,  only : unit_scale_type
 use MOM_variables,     only : surface, thermo_var_ptrs
 use MOM_verticalGrid,  only : verticalGrid_type
-
-use coupler_types_mod, only : coupler_2d_bc_type, coupler_type_spawn
-use coupler_types_mod, only : coupler_type_increment_data, coupler_type_initialized
-use coupler_types_mod, only : coupler_type_copy_data, coupler_type_destructor
 
 implicit none ; private
 
@@ -185,6 +183,13 @@ type, public :: forcing
   real :: C_p                !< heat capacity of seawater [Q degC-1 ~> J kg-1 degC-1].
                              !! C_p is is the same value as in thermovar_ptrs_type.
 
+  ! CFC-related arrays needed in the MOM_CFC_cap module
+  real, pointer, dimension(:,:) :: &
+    cfc11_flux    => NULL(), &  !< flux of cfc_11 into the ocean [mol m-2 s-1].
+    cfc12_flux    => NULL(), &  !< flux of cfc_12 into the ocean [mol m-2 s-1].
+    ice_fraction  => NULL(), &  !< fraction of sea ice coverage at h-cells, from 0 to 1 [nondim].
+    u10_sqr       => NULL()     !< wind magnitude at 10 m squared [L2 T-2 ~> m2 s-2]
+
   ! passive tracer surface fluxes
   type(coupler_2d_bc_type) :: tr_fluxes !< This structure contains arrays of
      !! of named fields used for passive tracer fluxes.
@@ -248,6 +253,19 @@ type, public :: mech_forcing
   logical :: accumulate_rigidity = .false. !< If true, the rigidity due to various types of
                                 !! ice needs to be accumulated, and the rigidity explicitly
                                 !! reset to zero at the driver level when appropriate.
+
+  real, pointer, dimension(:,:) :: &
+       ustk0 => NULL(), &       !< Surface Stokes drift, zonal [m/s]
+       vstk0 => NULL()          !< Surface Stokes drift, meridional [m/s]
+  real, pointer, dimension(:) :: &
+       stk_wavenumbers => NULL() !< The central wave number of Stokes bands [rad/m]
+  real, pointer, dimension(:,:,:) :: &
+       ustkb => NULL(), &       !< Stokes Drift spectrum, zonal [m/s]
+                                !! Horizontal - u points
+                                !! 3rd dimension - wavenumber
+       vstkb => NULL()          !< Stokes Drift spectrum, meridional [m/s]
+                                !! Horizontal - v points
+                                !! 3rd dimension - wavenumber
 
   logical :: initialized = .false. !< This indicates whether the appropriate arrays have been initialized.
 end type mech_forcing
@@ -337,6 +355,12 @@ type, public :: forcing_diags
   integer :: id_TKE_tidal = -1
   integer :: id_buoy      = -1
 
+  ! cfc-related diagnostics handles
+  integer :: id_cfc11    = -1
+  integer :: id_cfc12    = -1
+  integer :: id_ice_fraction = -1
+  integer :: id_u10_sqr      = -1
+
   ! iceberg diagnostic handles
   integer :: id_ustar_berg = -1
   integer :: id_area_berg = -1
@@ -376,9 +400,9 @@ subroutine extractFluxes1d(G, GV, US, fluxes, optics, nsw, j, dt, &
                                                             !! are scaled away [H ~> m or kg m-2]
   logical,                  intent(in)    :: useRiverHeatContent   !< logical for river heat content
   logical,                  intent(in)    :: useCalvingHeatContent !< logical for calving heat content
-  real, dimension(SZI_(G),SZK_(G)), &
+  real, dimension(SZI_(G),SZK_(GV)), &
                             intent(in)    :: h              !< layer thickness [H ~> m or kg m-2]
-  real, dimension(SZI_(G),SZK_(G)), &
+  real, dimension(SZI_(G),SZK_(GV)), &
                             intent(in)    :: T              !< layer temperatures [degC]
   real, dimension(SZI_(G)), intent(out)   :: netMassInOut   !< net mass flux (non-Bouss) or volume flux
                                                             !! (if Bouss) of water in/out of ocean over
@@ -460,7 +484,7 @@ subroutine extractFluxes1d(G, GV, US, fluxes, optics, nsw, j, dt, &
   I_Cp      = 1.0 / fluxes%C_p
   I_Cp_Hconvert = 1.0 / (GV%H_to_RZ * fluxes%C_p)
 
-  is = G%isc ; ie = G%iec ; nz = G%ke
+  is = G%isc ; ie = G%iec ; nz = GV%ke
 
   calculate_diags = .true.
   if (present(skip_diags)) calculate_diags = .not. skip_diags
@@ -839,9 +863,9 @@ subroutine extractFluxes2d(G, GV, US, fluxes, optics, nsw, dt, FluxRescaleDepth,
                                                                     !! are scaled away [H ~> m or kg m-2]
   logical,                          intent(in)    :: useRiverHeatContent   !< logical for river heat content
   logical,                          intent(in)    :: useCalvingHeatContent !< logical for calving heat content
-  real, dimension(SZI_(G),SZJ_(G),SZK_(G)), &
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
                                     intent(in)    :: h              !< layer thickness [H ~> m or kg m-2]
-  real, dimension(SZI_(G),SZJ_(G),SZK_(G)), &
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
                                     intent(in)    :: T              !< layer temperatures [degC]
   real, dimension(SZI_(G),SZJ_(G)), intent(out)   :: netMassInOut   !< net mass flux (non-Bouss) or volume flux
                                                                     !! (if Bouss) of water in/out of ocean over
@@ -893,12 +917,12 @@ subroutine calculateBuoyancyFlux1d(G, GV, US, fluxes, optics, nsw, h, Temp, Salt
   type(optics_type),                        pointer       :: optics         !< penetrating SW optics
   integer,                                  intent(in)    :: nsw            !< The number of frequency bands of
                                                                             !! penetrating shortwave radiation
-  real, dimension(SZI_(G),SZJ_(G),SZK_(G)), intent(in)    :: h              !< layer thickness [H ~> m or kg m-2]
-  real, dimension(SZI_(G),SZJ_(G),SZK_(G)), intent(in)    :: Temp           !< prognostic temp [degC]
-  real, dimension(SZI_(G),SZJ_(G),SZK_(G)), intent(in)    :: Salt           !< salinity [ppt]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), intent(in)    :: h              !< layer thickness [H ~> m or kg m-2]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), intent(in)    :: Temp           !< prognostic temp [degC]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), intent(in)    :: Salt           !< salinity [ppt]
   type(thermo_var_ptrs),                    intent(inout) :: tv             !< thermodynamics type
   integer,                                  intent(in)    :: j              !< j-row to work on
-  real, dimension(SZI_(G),SZK_(G)+1),       intent(inout) :: buoyancyFlux   !< buoyancy fluxes [L2 T-3 ~> m2 s-3]
+  real, dimension(SZI_(G),SZK_(GV)+1),      intent(inout) :: buoyancyFlux   !< buoyancy fluxes [L2 T-3 ~> m2 s-3]
   real, dimension(SZI_(G)),                 intent(inout) :: netHeatMinusSW !< surf Heat flux
                                                                       !! [degC H s-1 ~> degC m s-1 or degC kg m-2 s-1]
   real, dimension(SZI_(G)),                 intent(inout) :: netSalt        !< surf salt flux
@@ -917,7 +941,7 @@ subroutine calculateBuoyancyFlux1d(G, GV, US, fluxes, optics, nsw, h, Temp, Salt
   real, dimension(SZI_(G))              :: pressure   ! pressure at the surface [R L2 T-2 ~> Pa]
   real, dimension(SZI_(G))              :: dRhodT     ! density partial derivative wrt temp [R degC-1 ~> kg m-3 degC-1]
   real, dimension(SZI_(G))              :: dRhodS     ! density partial derivative wrt saln [R ppt-1 ~> kg m-3 ppt-1]
-  real, dimension(SZI_(G),SZK_(G)+1)    :: netPen     ! The net penetrating shortwave radiation at each level
+  real, dimension(SZI_(G),SZK_(GV)+1)   :: netPen     ! The net penetrating shortwave radiation at each level
                                                       ! [degC H ~> degC m or degC kg m-2]
 
   logical :: useRiverHeatContent
@@ -972,7 +996,7 @@ subroutine calculateBuoyancyFlux1d(G, GV, US, fluxes, optics, nsw, h, Temp, Salt
   buoyancyFlux(G%isc:G%iec,1) = - GoRho * ( dRhodS(G%isc:G%iec) * netSalt(G%isc:G%iec) + &
                                              dRhodT(G%isc:G%iec) * netHeat(G%isc:G%iec) ) ! [L2 T-3 ~> m2 s-3]
   ! We also have a penetrative buoyancy flux associated with penetrative SW
-  do k=2, G%ke+1
+  do k=2, GV%ke+1
     buoyancyFlux(G%isc:G%iec,k) = - GoRho * ( dRhodT(G%isc:G%iec) * netPen(G%isc:G%iec,k) ) ! [L2 T-3 ~> m2 s-3]
   enddo
 
@@ -988,11 +1012,11 @@ subroutine calculateBuoyancyFlux2d(G, GV, US, fluxes, optics, h, Temp, Salt, tv,
   type(unit_scale_type),                      intent(in)    :: US     !< A dimensional unit scaling type
   type(forcing),                              intent(inout) :: fluxes !< surface fluxes
   type(optics_type),                          pointer       :: optics !< SW ocean optics
-  real, dimension(SZI_(G),SZJ_(G),SZK_(G)),   intent(in)    :: h      !< layer thickness [H ~> m or kg m-2]
-  real, dimension(SZI_(G),SZJ_(G),SZK_(G)),   intent(in)    :: Temp   !< temperature [degC]
-  real, dimension(SZI_(G),SZJ_(G),SZK_(G)),   intent(in)    :: Salt   !< salinity [ppt]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)),  intent(in)    :: h      !< layer thickness [H ~> m or kg m-2]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)),  intent(in)    :: Temp   !< temperature [degC]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)),  intent(in)    :: Salt   !< salinity [ppt]
   type(thermo_var_ptrs),                      intent(inout) :: tv     !< thermodynamics type
-  real, dimension(SZI_(G),SZJ_(G),SZK_(G)+1), intent(inout) :: buoyancyFlux   !< buoyancy fluxes [L2 T-3 ~> m2 s-3]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1), intent(inout) :: buoyancyFlux   !< buoyancy fluxes [L2 T-3 ~> m2 s-3]
   real, dimension(SZI_(G),SZJ_(G)), optional, intent(inout) :: netHeatMinusSW !< surf temp flux
                                                                               !! [degC H ~> degC m or degC kg m-2]
   real, dimension(SZI_(G),SZJ_(G)), optional, intent(inout) :: netSalt        !< surf salt flux
@@ -1025,8 +1049,7 @@ subroutine MOM_forcing_chksum(mesg, fluxes, G, US, haloshift)
   type(unit_scale_type),   intent(in) :: US        !< A dimensional unit scaling type
   integer, optional,       intent(in) :: haloshift !< shift in halo
 
-  integer :: is, ie, js, je, nz, hshift
-  is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = G%ke
+  integer :: hshift
 
   hshift = 1 ; if (present(haloshift)) hshift = haloshift
 
@@ -1077,6 +1100,10 @@ subroutine MOM_forcing_chksum(mesg, fluxes, G, US, haloshift)
                  haloshift=hshift, scale=US%QRZ_T_to_W_m2)
   if (associated(fluxes%p_surf)) &
     call hchksum(fluxes%p_surf, mesg//" fluxes%p_surf", G%HI, haloshift=hshift , scale=US%RL2_T2_to_Pa)
+  if (associated(fluxes%u10_sqr)) &
+    call hchksum(fluxes%u10_sqr, mesg//" fluxes%u10_sqr", G%HI, haloshift=hshift , scale=US%Z_to_m**2*US%s_to_T**2)
+  if (associated(fluxes%ice_fraction)) &
+    call hchksum(fluxes%ice_fraction, mesg//" fluxes%ice_fraction", G%HI, haloshift=hshift)
   if (associated(fluxes%salt_flux)) &
     call hchksum(fluxes%salt_flux, mesg//" fluxes%salt_flux", G%HI, haloshift=hshift, scale=US%RZ_T_to_kg_m2s)
   if (associated(fluxes%TKE_tidal)) &
@@ -1119,10 +1146,9 @@ subroutine MOM_mech_forcing_chksum(mesg, forces, G, US, haloshift)
   type(unit_scale_type),   intent(in) :: US        !< A dimensional unit scaling type
   integer, optional,       intent(in) :: haloshift !< shift in halo
 
-  integer :: is, ie, js, je, nz, hshift
-  is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; nz = G%ke
+  integer :: hshift
 
-  hshift=1; if (present(haloshift)) hshift=haloshift
+  hshift = 1 ; if (present(haloshift)) hshift = haloshift
 
   ! Note that for the chksum calls to be useful for reproducing across PE
   ! counts, there must be no redundant points, so all variables use is..ie
@@ -1135,8 +1161,9 @@ subroutine MOM_mech_forcing_chksum(mesg, forces, G, US, haloshift)
   if (associated(forces%ustar)) &
     call hchksum(forces%ustar, mesg//" forces%ustar", G%HI, haloshift=hshift, scale=US%Z_to_m*US%s_to_T)
   if (associated(forces%rigidity_ice_u) .and. associated(forces%rigidity_ice_v)) &
-    call uvchksum(mesg//" forces%rigidity_ice_[uv]", forces%rigidity_ice_u, forces%rigidity_ice_v, &
-                  G%HI, haloshift=hshift, symmetric=.true., scale=US%L_to_m**3*US%L_to_Z*US%s_to_T)
+    call uvchksum(mesg//" forces%rigidity_ice_[uv]", forces%rigidity_ice_u, &
+        forces%rigidity_ice_v, G%HI, haloshift=hshift, symmetric=.true., &
+        scale=US%L_to_m**3*US%L_to_Z*US%s_to_T, scalar_pair=.true.)
 
 end subroutine MOM_mech_forcing_chksum
 
@@ -1229,13 +1256,14 @@ end subroutine forcing_SinglePointPrint
 
 
 !> Register members of the forcing type for diagnostics
-subroutine register_forcing_type_diags(Time, diag, US, use_temperature, handles, use_berg_fluxes)
+subroutine register_forcing_type_diags(Time, diag, US, use_temperature, handles, use_berg_fluxes, use_cfcs)
   type(time_type),     intent(in)    :: Time            !< time type
   type(diag_ctrl),     intent(inout) :: diag            !< diagnostic control type
   type(unit_scale_type), intent(in)  :: US              !< A dimensional unit scaling type
   logical,             intent(in)    :: use_temperature !< True if T/S are in use
   type(forcing_diags), intent(inout) :: handles         !< handles for diagnostics
   logical, optional,   intent(in)    :: use_berg_fluxes !< If true, allow iceberg flux diagnostics
+  logical, optional,   intent(in)    :: use_cfcs        !< If true, allow cfc related diagnostics
 
   ! Clock for forcing diagnostics
   handles%id_clock_forcing=cpu_clock_id('(Ocean forcing diagnostics)', grain=CLOCK_ROUTINE)
@@ -1278,6 +1306,34 @@ subroutine register_forcing_type_diags(Time, diag, US, use_temperature, handles,
     endif
   endif
 
+  ! units for cfc11_flux and cfc12_flux are mol m-2 s-1
+  ! See:
+  ! http://clipc-services.ceda.ac.uk/dreq/u/0940cbee6105037e4b7aa5579004f124.html
+  ! http://clipc-services.ceda.ac.uk/dreq/u/e9e21426e4810d0bb2d3dddb24dbf4dc.html
+  if (present(use_cfcs)) then
+    if (use_cfcs) then
+      handles%id_cfc11 = register_diag_field('ocean_model', 'cfc11_flux', diag%axesT1, Time, &
+          'Gas exchange flux of CFC11 into the ocean ', 'mol m-2 s-1', &
+          conversion= US%m_to_Z**2*US%s_to_T,&
+          cmor_field_name='fgcfc11', &
+          cmor_long_name='Surface Downward CFC11 Flux', &
+          cmor_standard_name='surface_downward_cfc11_flux')
+
+      handles%id_cfc12 = register_diag_field('ocean_model', 'cfc12_flux', diag%axesT1, Time, &
+          'Gas exchange flux of CFC12 into the ocean ', 'mol m-2 s-1', &
+          conversion= US%m_to_Z**2*US%s_to_T,&
+          cmor_field_name='fgcfc12', &
+          cmor_long_name='Surface Downward CFC12 Flux', &
+          cmor_standard_name='surface_downward_cfc12_flux')
+
+      handles%id_ice_fraction = register_diag_field('ocean_model', 'ice_fraction', diag%axesT1, Time, &
+          'Fraction of cell area covered by sea ice', 'm2 m-2')
+
+      handles%id_u10_sqr = register_diag_field('ocean_model', 'u10_sqr', diag%axesT1, Time, &
+          'Wind magnitude at 10m, squared', 'm2 s-2', conversion=US%Z_to_m**2*US%s_to_T**2)
+    endif
+  endif
+
   handles%id_psurf = register_diag_field('ocean_model', 'p_surf', diag%axesT1, Time, &
         'Pressure at ice-ocean or atmosphere-ocean interface', &
         'Pa', conversion=US%RL2_T2_to_Pa, cmor_field_name='pso', &
@@ -1304,20 +1360,20 @@ subroutine register_forcing_type_diags(Time, diag, US, use_temperature, handles,
         ! This diagnostic is rescaled to MKS units when combined.
 
   handles%id_evap = register_diag_field('ocean_model', 'evap', diag%axesT1, Time, &
-       'Evaporation/condensation at ocean surface (evaporation is negative)', &
-       'kg m-2 s-1', conversion=US%RZ_T_to_kg_m2s, &
-       standard_name='water_evaporation_flux', cmor_field_name='evs', &
-       cmor_standard_name='water_evaporation_flux', &
-       cmor_long_name='Water Evaporation Flux Where Ice Free Ocean over Sea')
+        'Evaporation/condensation at ocean surface (evaporation is negative)', &
+        'kg m-2 s-1', conversion=US%RZ_T_to_kg_m2s, &
+        standard_name='water_evaporation_flux', cmor_field_name='evs', &
+        cmor_standard_name='water_evaporation_flux', &
+        cmor_long_name='Water Evaporation Flux Where Ice Free Ocean over Sea')
 
   ! smg: seaice_melt field requires updates to the sea ice model
   handles%id_seaice_melt = register_diag_field('ocean_model', 'seaice_melt',       &
-     diag%axesT1, Time, 'water flux to ocean from snow/sea ice melting(> 0) or formation(< 0)', &
-     'kg m-2 s-1', conversion=US%RZ_T_to_kg_m2s, &
-      standard_name='water_flux_into_sea_water_due_to_sea_ice_thermodynamics',     &
-      cmor_field_name='fsitherm',                                                  &
-      cmor_standard_name='water_flux_into_sea_water_due_to_sea_ice_thermodynamics',&
-      cmor_long_name='water flux to ocean from sea ice melt(> 0) or form(< 0)')
+        diag%axesT1, Time, 'water flux to ocean from snow/sea ice melting(> 0) or formation(< 0)', &
+        'kg m-2 s-1', conversion=US%RZ_T_to_kg_m2s, &
+        standard_name='water_flux_into_sea_water_due_to_sea_ice_thermodynamics',     &
+        cmor_field_name='fsitherm',                                                  &
+        cmor_standard_name='water_flux_into_sea_water_due_to_sea_ice_thermodynamics',&
+        cmor_long_name='water flux to ocean from sea ice melt(> 0) or form(< 0)')
 
   handles%id_precip = register_diag_field('ocean_model', 'precip', diag%axesT1, Time, &
         'Liquid + frozen precipitation into ocean', 'kg m-2 s-1')
@@ -1874,17 +1930,16 @@ subroutine register_forcing_type_diags(Time, diag, US, use_temperature, handles,
 
   handles%id_total_saltflux = register_scalar_field('ocean_model',          &
       'total_salt_flux', Time, diag,                                        &
-      long_name='Area integrated surface salt flux', units='kg',            &
+      long_name='Area integrated surface salt flux', units='kg s-1',        &
       cmor_field_name='total_sfdsi',                                        &
-      cmor_units='kg s-1',                                                  &
       cmor_standard_name='downward_sea_ice_basal_salt_flux_area_integrated',&
       cmor_long_name='Downward Sea Ice Basal Salt Flux Area Integrated')
 
   handles%id_total_saltFluxIn = register_scalar_field('ocean_model', 'total_salt_Flux_In', &
-      Time, diag, long_name='Area integrated surface salt flux at surface from coupler', units='kg')
+      Time, diag, long_name='Area integrated surface salt flux at surface from coupler', units='kg s-1')
 
   handles%id_total_saltFluxAdded = register_scalar_field('ocean_model', 'total_salt_Flux_Added', &
-      Time, diag, long_name='Area integrated surface salt flux due to restoring or flux adjustment', units='kg')
+      Time, diag, long_name='Area integrated surface salt flux due to restoring or flux adjustment', units='kg s-1')
 
 
 end subroutine register_forcing_type_diags
@@ -2825,6 +2880,19 @@ subroutine forcing_diagnostics(fluxes_in, sfc_state, G_in, US, time_end, diag, h
     if (handles%id_netFWGlobalScl > 0)                                               &
       call post_data(handles%id_netFWGlobalScl, fluxes%netFWGlobalScl, diag)
 
+    ! post diagnostics related to cfcs  ====================================
+
+    if ((handles%id_cfc11 > 0) .and. associated(fluxes%cfc11_flux)) &
+      call post_data(handles%id_cfc11, fluxes%cfc11_flux, diag)
+
+    if ((handles%id_cfc11 > 0) .and. associated(fluxes%cfc12_flux)) &
+      call post_data(handles%id_cfc12, fluxes%cfc12_flux, diag)
+
+    if ((handles%id_ice_fraction > 0) .and. associated(fluxes%ice_fraction)) &
+      call post_data(handles%id_ice_fraction, fluxes%ice_fraction, diag)
+
+    if ((handles%id_u10_sqr > 0) .and. associated(fluxes%u10_sqr)) &
+      call post_data(handles%id_u10_sqr, fluxes%u10_sqr, diag)
 
     ! remaining boundary terms ==================================================
 
@@ -2863,7 +2931,7 @@ end subroutine forcing_diagnostics
 
 !> Conditionally allocate fields within the forcing type
 subroutine allocate_forcing_by_group(G, fluxes, water, heat, ustar, press, &
-                                     shelf, iceberg, salt, fix_accum_bug)
+                                     shelf, iceberg, salt, fix_accum_bug, cfc)
   type(ocean_grid_type), intent(in) :: G       !< Ocean grid structure
   type(forcing),      intent(inout) :: fluxes  !< A structure containing thermodynamic forcing fields
   logical, optional,     intent(in) :: water   !< If present and true, allocate water fluxes
@@ -2875,6 +2943,7 @@ subroutine allocate_forcing_by_group(G, fluxes, water, heat, ustar, press, &
   logical, optional,     intent(in) :: salt    !< If present and true, allocate salt fluxes
   logical, optional,     intent(in) :: fix_accum_bug !< If present and true, avoid using a bug in
                                                !! accumulation of ustar_gustless
+  logical, optional,     intent(in) :: cfc     !< If present and true, allocate cfc fluxes
 
   ! Local variables
   integer :: isd, ied, jsd, jed, IsdB, IedB, JsdB, JedB
@@ -2929,6 +2998,12 @@ subroutine allocate_forcing_by_group(G, fluxes, water, heat, ustar, press, &
   call myAlloc(fluxes%ustar_berg,isd,ied,jsd,jed, iceberg)
   call myAlloc(fluxes%area_berg,isd,ied,jsd,jed, iceberg)
   call myAlloc(fluxes%mass_berg,isd,ied,jsd,jed, iceberg)
+
+  !These fields should only on allocated when USE_CFC_CAP is activated.
+  call myAlloc(fluxes%cfc11_flux,isd,ied,jsd,jed, cfc)
+  call myAlloc(fluxes%cfc12_flux,isd,ied,jsd,jed, cfc)
+  call myAlloc(fluxes%ice_fraction,isd,ied,jsd,jed, cfc)
+  call myAlloc(fluxes%u10_sqr,isd,ied,jsd,jed, cfc)
 
   if (present(fix_accum_bug)) fluxes%gustless_accum_bug = .not.fix_accum_bug
 end subroutine allocate_forcing_by_group
@@ -2985,7 +3060,7 @@ end subroutine allocate_forcing_by_ref
 !> Conditionally allocate fields within the mechanical forcing type using
 !! control flags.
 subroutine allocate_mech_forcing_by_group(G, forces, stress, ustar, shelf, &
-                                          press, iceberg)
+                                          press, iceberg, waves, num_stk_bands)
   type(ocean_grid_type), intent(in) :: G       !< Ocean grid structure
   type(mech_forcing), intent(inout) :: forces  !< Forcing fields structure
 
@@ -2994,6 +3069,8 @@ subroutine allocate_mech_forcing_by_group(G, forces, stress, ustar, shelf, &
   logical, optional,     intent(in) :: shelf   !< If present and true, allocate forces for ice-shelf
   logical, optional,     intent(in) :: press   !< If present and true, allocate p_surf and related fields
   logical, optional,     intent(in) :: iceberg !< If present and true, allocate forces for icebergs
+  logical, optional,     intent(in) :: waves   !< If present and true, allocate wave fields
+  integer, optional,     intent(in) :: num_stk_bands !< Number of Stokes bands to allocate
 
   ! Local variables
   integer :: isd, ied, jsd, jed, IsdB, IedB, JsdB, JedB
@@ -3019,6 +3096,24 @@ subroutine allocate_mech_forcing_by_group(G, forces, stress, ustar, shelf, &
   !These fields should only on allocated when iceberg area is being passed through the coupler.
   call myAlloc(forces%area_berg,isd,ied,jsd,jed, iceberg)
   call myAlloc(forces%mass_berg,isd,ied,jsd,jed, iceberg)
+
+  !These fields should only be allocated when waves
+  call myAlloc(forces%ustk0,isd,ied,jsd,jed, waves)
+  call myAlloc(forces%vstk0,isd,ied,jsd,jed, waves)
+  if (present(waves)) then; if (waves) then; if (.not.associated(forces%ustkb)) then
+    if (.not.(present(num_stk_bands))) call MOM_error(FATAL,"Requested to &
+      initialize with waves, but no waves are present.")
+    allocate(forces%stk_wavenumbers(num_stk_bands))
+    forces%stk_wavenumbers(:) = 0.0
+    allocate(forces%ustkb(isd:ied,jsd:jed,num_stk_bands))
+    forces%ustkb(isd:ied,jsd:jed,:) = 0.0
+  endif ; endif ; endif
+
+  if (present(waves)) then; if (waves) then; if (.not.associated(forces%vstkb)) then
+    allocate(forces%vstkb(isd:ied,jsd:jed,num_stk_bands))
+    forces%vstkb(isd:ied,jsd:jed,:) = 0.0
+  endif ; endif ; endif
+
 end subroutine allocate_mech_forcing_by_group
 
 
@@ -3156,6 +3251,10 @@ subroutine deallocate_forcing_type(fluxes)
   if (associated(fluxes%ustar_berg))           deallocate(fluxes%ustar_berg)
   if (associated(fluxes%area_berg))            deallocate(fluxes%area_berg)
   if (associated(fluxes%mass_berg))            deallocate(fluxes%mass_berg)
+  if (associated(fluxes%ice_fraction))         deallocate(fluxes%ice_fraction)
+  if (associated(fluxes%u10_sqr))              deallocate(fluxes%u10_sqr)
+  if (associated(fluxes%cfc11_flux))           deallocate(fluxes%cfc11_flux)
+  if (associated(fluxes%cfc12_flux))           deallocate(fluxes%cfc12_flux)
 
   call coupler_type_destructor(fluxes%tr_fluxes)
 
@@ -3472,15 +3571,15 @@ end subroutine rotate_mech_forcing
 !! The convergence of boundary-related heat into surface grid cell is
 !! given by the difference in the net heat entering the top of the k=1
 !! cell and the penetrative SW leaving the bottom of the cell.
-!! \f{eqnarray*}{
-!!  Q(k=1) &=& \mbox{hfds} - \mbox{pen_SW(leaving bottom of k=1)}
-!!   \\    &=& \mbox{nonpen_SW} + (\mbox{pen_SW(enter k=1)}-\mbox{pen_SW(leave k=1)})
+!! \f{eqnarray*}
+!!  Q(k=1) &=& \mbox{hfds} - \mbox{pen}\_\mbox{SW(leaving bottom of k=1)}
+!!   \\    &=& \mbox{nonpen}\_\mbox{SW} + (\mbox{pen}\_\mbox{SW(enter k=1)}-\mbox{pen}\_\mbox{SW(leave k=1)})
 !!                              + \mbox{LW+LAT+SENS+MASS+FRAZ+RES}
-!!   \\    &=& \mbox{nonpen_SW}+ \mbox{LW+LAT+SENS+MASS+FRAZ+RES}
-!!                + [\mbox{pen_SW(enter k=1)} - \mbox{pen_SW(leave k=1)}]
+!!   \\    &=& \mbox{nonpen}\_\mbox{SW}+ \mbox{LW+LAT+SENS+MASS+FRAZ+RES}
+!!                + [\mbox{pen}\_\mbox{SW(enter k=1)} - \mbox{pen}\_\mbox{SW(leave k=1)}]
 !!   \f}
 !! The convergence of the penetrative shortwave flux is given by
-!! \f$ \mbox{pen_SW (enter k)}-\mbox{pen_SW (leave k)}\f$.  This term
+!! \f$ \mbox{pen}\_\mbox{SW (enter k)}-\mbox{pen}\_\mbox{SW (leave k)}\f$.  This term
 !! appears for all cells k=1,nz.  It is diagnosed as "rsdoabsorb" inside module
 !! MOM6/src/parameterizations/vertical/MOM_diabatic_aux.F90
 !!

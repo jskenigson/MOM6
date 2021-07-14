@@ -37,14 +37,16 @@ type, public :: MOM_stoch_eos_CS
   real ALLOCABLE_, dimension(NIMEM_,NJMEM_) :: phi
                     !< temporal correlation stochastic EOS (deugging)
   logical :: use_stoch_eos  !< If true, use the stochastic equation of state (Stanley et al. 2020)
-  real :: stanley_coeff 
-!  integer :: id_stoch_eos  = -1, id_stoch_phi  = -1
+  real :: stanley_coeff !< Coefficient correlating the temperature gradient 
+                        !and SGS T variance; if <0, turn off scheme in all codes
+  real :: stanley_a !a in exp(aX) in stochastic coefficient 
+  integer :: id_stoch_eos  = -1, id_stoch_phi  = -1, id_tvar_sgs = -1
 end type MOM_stoch_eos_CS
 
 
 contains
   subroutine MOM_stoch_eos_init(G,Time,param_file,stoch_eos_CS,restart_CS,diag)
-! initialization subroutine called my MOM.F90,
+! initialization subroutine called by MOM.F90,
   type(param_file_type), intent(in)    :: param_file  !< structure indicating parameter file to parse
   type(ocean_grid_type), intent(in)    :: G
   type(time_type),       intent(in)    :: Time
@@ -61,37 +63,49 @@ contains
                  "to the EOS in the PGF.", default=.false.)
   call get_param(param_file, "MOM", "STANLEY_COEFF", stoch_eos_CS%stanley_coeff, &
                  "Coefficient correlating the temperature gradient "//&
-                 "and SGS T variance.", default=0.0)
-  ALLOC_(stoch_eos_CS%pattern(G%isd:G%ied,G%jsd:G%jed)) ; stoch_eos_CS%pattern(:,:) = 0.0
-  vd = var_desc("stoch_eos_pattern","nondim","Random pattern for stoch EOS",'h','1')
-  call register_restart_field(stoch_eos_CS%pattern, vd, .false., restart_CS)
-  ALLOC_(stoch_eos_CS%phi(G%isd:G%ied,G%jsd:G%jed)) ; stoch_eos_CS%phi(:,:) = 0.0
-  ALLOC_(l2_inv(G%isd:G%ied,G%jsd:G%jed)) 
-  ALLOC_(rgauss(G%isd:G%ied,G%jsd:G%jed)) 
-  call get_param(param_file, "MOM", "SEED_STOCH_EOS", seed, &
+                 "and SGS T variance.", default=-1.0)
+  call get_param(param_file, "MOM", "STANLEY_A", stoch_eos_CS%stanley_a, &
+                 "Coefficient a which scales chi in stochastic perturbation of the "//&
+                 "SGS T variance.", default=1.0)
+				 
+  !don't run anything if STANLEY_COEFF < 0
+  if (stoch_eos_CS%stanley_coeff >= 0.0) then
+  
+    ALLOC_(stoch_eos_CS%pattern(G%isd:G%ied,G%jsd:G%jed)) ; stoch_eos_CS%pattern(:,:) = 0.0
+    vd = var_desc("stoch_eos_pattern","nondim","Random pattern for stoch EOS",'h','1')
+    call register_restart_field(stoch_eos_CS%pattern, vd, .false., restart_CS)
+    ALLOC_(stoch_eos_CS%phi(G%isd:G%ied,G%jsd:G%jed)) ; stoch_eos_CS%phi(:,:) = 0.0
+    ALLOC_(l2_inv(G%isd:G%ied,G%jsd:G%jed)) 
+    ALLOC_(rgauss(G%isd:G%ied,G%jsd:G%jed)) 
+    call get_param(param_file, "MOM", "SEED_STOCH_EOS", seed, &
                  "Specfied seed for random number sequence ", default=0)
-  call random_2d_constructor(rn_CS, G%HI, Time, seed)
-  call random_2d_norm(rn_CS, G%HI, rgauss)
-  ! fill array with approximation of grid area needed for decorrelation
-  ! time-scale calculation
-  do j=G%jsc,G%jec
-     do i=G%isc,G%iec
-        l2_inv(i,j)=1.0/(G%dxT(i,j)**2+G%dyT(i,j)**2)
-     enddo
-  enddo 
-  if (is_new_run(restart_CS)) then
-     do j=G%jsc,G%jec
-        do i=G%isc,G%iec
-           stoch_eos_CS%pattern(i,j)=amplitude*rgauss(i,j)
-        enddo
-     enddo
-  endif
+    call random_2d_constructor(rn_CS, G%HI, Time, seed)
+    call random_2d_norm(rn_CS, G%HI, rgauss)
+    ! fill array with approximation of grid area needed for decorrelation
+    ! time-scale calculation
+    do j=G%jsc,G%jec
+       do i=G%isc,G%iec
+          l2_inv(i,j)=1.0/(G%dxT(i,j)**2+G%dyT(i,j)**2)
+       enddo
+    enddo 
+    if (is_new_run(restart_CS)) then
+       do j=G%jsc,G%jec
+          do i=G%isc,G%iec
+             stoch_eos_CS%pattern(i,j)=amplitude*rgauss(i,j)
+          enddo
+       enddo
+    endif
 
-  !stoch_eos_CS%id_stoch_eos = register_diag_field('ocean_model', 'stoch_eos', diag%axesT1, Time, &
-  !    'random pattern for EOS', 'None')
-  !stoch_eos_CS%id_stoch_phi = register_diag_field('ocean_model', 'stoch_phi', diag%axesT1, Time, &
-  !    'phi for EOS', 'None')
-  !print*,'PJP registered output',stoch_eos_CS%id_stoch_eos,stoch_eos_CS%id_stoch_phi
+    !register diagnostics
+    stoch_eos_CS%id_tvar_sgs = register_diag_field('ocean_model', 'tvar_sgs', diag%axesTL, Time, &
+      'Parameterized SGS Temperature Variance ', 'None')	
+	if (stoch_eos_CS%use_stoch_eos) then
+      stoch_eos_CS%id_stoch_eos = register_diag_field('ocean_model', 'stoch_eos', diag%axesT1, Time, &
+        'random pattern for EOS', 'None')
+      stoch_eos_CS%id_stoch_phi = register_diag_field('ocean_model', 'stoch_phi', diag%axesT1, Time, &
+        'phi for EOS', 'None')
+	endif
+  endif
   
   end subroutine MOM_stoch_eos_init
 
@@ -115,8 +129,8 @@ contains
   ! advance AR(1)
   do j=G%jsc,G%jec
      do i=G%isc,G%iec
-        ubar=0.5*(u(I,j,1)+u(I-1,j,1))
-        vbar=0.5*(v(i,J,1)+v(i,J-1,1))
+        ubar=0.5*(u(I,j,1)*G%mask2dCu(I,j)+u(I-1,j,1)*G%mask2dCu(I-1,j))
+        vbar=0.5*(v(i,J,1)*G%mask2dCv(i,J)+v(i,J-1,1)*G%mask2dCv(i,J-1))
         phi=exp(-1*delt*tfac*sqrt((ubar**2+vbar**2)*l2_inv(i,j)))
         stoch_eos_CS%pattern(i,j)=phi*stoch_eos_CS%pattern(i,j) + amplitude*sqrt(1-phi**2)*rgauss(i,j)
         stoch_eos_CS%phi(i,j)=phi
@@ -148,10 +162,10 @@ contains
 ! locals
   integer                                ::  i,j,k
   real :: Tl(5)              ! copy and T in local stencil [degC]
-  real :: mn_T               ! mean of T in local stencil [degC]
-  real :: mn_T2              ! mean of T**2 in local stencil [degC]
+  real :: TX2                ! dx times dT/dx, squared [degC^2]
+  real :: TY2                ! dy times dT/dy, squared [degC^2]
   real :: hl(5)              ! Copy of local stencil of H [H ~> m]
-  real :: r_sm_H             ! Reciprocal of sum of H in local stencil [H-1 ~> m-1]
+  real :: r_sm_H             ! Reciprocal of sum of H in local stencil [H-3 ~> m-3]
 
   ! This block does a thickness weighted variance calculation and helps control for
   ! extreme gradients along layers which are vanished against topography. It is
@@ -165,28 +179,36 @@ contains
            hl(3) = h(i+1,j,k) * G%mask2dCu(I,j)
            hl(4) = h(i,j-1,k) * G%mask2dCv(i,J-1)
            hl(5) = h(i,j+1,k) * G%mask2dCv(i,J)
-           r_sm_H = 1. / ( ( hl(1) + ( ( hl(2) + hl(3) ) + ( hl(4) + hl(5) ) ) ) + GV%H_subroundoff )
-           ! Mean of T
+           r_sm_H = 1. / ( 4. * hl(3) * hl(4)  *hl(5) + hl(1) * (hl(2) + hl(3)) * (hl(4) + hl(5)) &
+                         + 4. * hl(2) * (hl(4) * hl(5) + hl(3) * (hl(4) + hl(5))) + GV%H_subroundoff**3 )
+           ! Local T
            Tl(1) = tv%T(i,j,k) ; Tl(2) = tv%T(i-1,j,k) ; Tl(3) = tv%T(i+1,j,k)
            Tl(4) = tv%T(i,j-1,k) ; Tl(5) = tv%T(i,j+1,k)
-           mn_T = ( hl(1)*Tl(1) + ( ( hl(2)*Tl(2) + hl(3)*Tl(3) ) + ( hl(4)*Tl(4) + hl(5)*Tl(5) ) ) ) * r_sm_H
-           ! Adjust T vectors to have zero mean
-           Tl(:) = Tl(:) - mn_T ; mn_T = 0.
-           ! Variance of T
-           mn_T2 = ( hl(1)*Tl(1)*Tl(1) + ( ( hl(2)*Tl(2)*Tl(2) + hl(3)*Tl(3)*Tl(3) ) &
-                                         + ( hl(4)*Tl(4)*Tl(4) + hl(5)*Tl(5)*Tl(5) ) ) ) * r_sm_H
-           ! Variance should be positive but round-off can violate this. Calculating
-           ! variance directly would fix this but requires more operations.
-           tv%varT(i,j,k) = stoch_eos_CS%stanley_coeff * max(0., mn_T2)
+           ! (dx times dT/dx)^2
+           TX2 = hl(1) * (hl(4) + hl(5)) * (hl(2) * (Tl(1) - Tl(2)) + hl(3) * (Tl(3) - Tl(1))) &
+                                        - 2. * (hl(2) * hl(3) * (hl(4) + hl(5)) * (Tl(2) - Tl(3)) &
+                                        + hl(2) * hl(4) * hl(5) * (2. * Tl(2) - Tl(4) - Tl(5))  &
+                                        - hl(3) * hl(4) * hl(5) * (2. * Tl(3) - Tl(4) - Tl(5)))
+           TX2 = (r_sm_H * TX2)**2
+           ! (dy times dT/dy)^2, obtained by rotating the indices
+           TY2 = hl(1) * (hl(3) + hl(2)) * (hl(4) * (Tl(1) - Tl(4)) + hl(5) * (Tl(5) - Tl(1))) &
+                                        - 2. * (hl(4) * hl(5) * (hl(3) + hl(2)) * (Tl(4) - Tl(5)) &
+                                        + hl(4) * hl(3) * hl(2) * (2. * Tl(4) - Tl(3) - Tl(2))  &
+                                        - hl(5) * hl(3) * hl(2) * (2. * Tl(5) - Tl(3) - Tl(2)))
+           TY2 = (r_sm_H * TY2)**2
+           ! SGS temperature variance parameterization 
+           tv%varT(i,j,k) = stoch_eos_CS%stanley_coeff * (TX2 + TY2)
         enddo
      enddo
   enddo
+  !set limiting value
+  tv%varT = min(tv%varT,35.0)
   ! if stochastic, perturb
   if (stoch_eos_CS%use_stoch_eos) then
      do k=1,G%ke
         do j=G%jsc,G%jec
            do i=G%isc,G%iec
-               tv%varT(i,j,k) = exp (stoch_eos_CS%pattern(i,j)) * tv%varT(i,j,k)
+               tv%varT(i,j,k) = exp (stoch_eos_CS%stanley_a * stoch_eos_CS%pattern(i,j)) * tv%varT(i,j,k)
            enddo
         enddo
      enddo
