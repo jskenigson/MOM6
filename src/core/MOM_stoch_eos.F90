@@ -162,10 +162,10 @@ contains
 ! locals
   integer                                ::  i,j,k
   real :: Tl(5)              ! copy and T in local stencil [degC]
-  real :: TX2                ! dx times dT/dx, squared [degC^2]
-  real :: TY2                ! dy times dT/dy, squared [degC^2]
+  real :: mn_T               ! mean of T in local stencil [degC]
+  real :: mn_T2              ! mean of T**2 in local stencil [degC]
   real :: hl(5)              ! Copy of local stencil of H [H ~> m]
-  real :: r_sm_H             ! Reciprocal of sum of H in local stencil [H-3 ~> m-3]
+  real :: r_sm_H             ! Reciprocal of sum of H in local stencil [H-1 ~> m-1]
 
   ! This block does a thickness weighted variance calculation and helps control for
   ! extreme gradients along layers which are vanished against topography. It is
