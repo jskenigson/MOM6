@@ -201,8 +201,6 @@ contains
         enddo
      enddo
   enddo
-  !set limiting value
-  tv%varT = min(tv%varT,35.0)
   ! if stochastic, perturb
   if (stoch_eos_CS%use_stoch_eos) then
      do k=1,G%ke
@@ -213,6 +211,8 @@ contains
         enddo
      enddo
   endif
+  !set limiting value
+  tv%varT = min(tv%varT,16.0)
   end subroutine MOM_calc_varT
 
 end module MOM_stoch_eos
